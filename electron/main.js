@@ -117,8 +117,8 @@ function createWindow() {
     height: saved?.h || 82,
     x: saved?.x,
     y: saved?.y,
-    minWidth: 220,
-    minHeight: 60,
+    minWidth: 120,
+    minHeight: 48,
     frame: false,
     skipTaskbar: process.platform === 'win32',
     alwaysOnTop: topMost,
@@ -198,7 +198,7 @@ function buildMenu(locked) {
     },
     { label: '透明度', submenu: opacityItems },
     { type: 'separator' },
-    { label: '尺寸：系統列', click: () => { mainWindow?.setSize(320, 82); saveSettings(); } }
+    { label: '尺寸：系統列', click: () => mainWindow?.webContents.executeJavaScript("holdvueMenu('size-sys')") }
   );
 
   if (!locked) {
@@ -279,7 +279,7 @@ ipcMain.on('holdvue-drag-end', () => {
 });
 ipcMain.on('holdvue-resize-start', (e, edge) => {
   const win = BrowserWindow.fromWebContents(e.sender) || mainWindow;
-  if (!win || (edge !== 'se' && edge !== 'sw')) return;
+  if (!win || (edge !== 'se' && edge !== 'sw' && edge !== 's')) return;
   const point = screen.getCursorScreenPoint();
   const b = win.getBounds();
   dragState = null;
@@ -301,12 +301,15 @@ ipcMain.on('holdvue-resize-move', () => {
   const dy = point.y - resizeState.startY;
   let { x, y, w, h } = resizeState;
   if (resizeState.edge === 'se') {
-    w = Math.max(220, resizeState.w + dx);
-    h = Math.max(60, resizeState.h + dy);
-  } else {
-    w = Math.max(220, resizeState.w - dx);
-    h = Math.max(60, resizeState.h + dy);
+    w = Math.max(120, resizeState.w + dx);
+    h = Math.max(48, resizeState.h + dy);
+  } else if (resizeState.edge === 'sw') {
+    w = Math.max(120, resizeState.w - dx);
+    h = Math.max(48, resizeState.h + dy);
     x = resizeState.x + (resizeState.w - w);
+  } else {
+    // 底邊：只調高度
+    h = Math.max(48, resizeState.h + dy);
   }
   resizeState.win.setBounds({ x: Math.round(x), y: Math.round(y), width: Math.round(w), height: Math.round(h) });
 });
@@ -316,7 +319,14 @@ ipcMain.on('holdvue-resize-end', () => {
 });
 ipcMain.on('holdvue-resize', (_e, w, h, chrome) => {
   if (!mainWindow) return;
-  mainWindow.setSize(Math.max(220, w | 0), Math.max(60, h | 0));
+  const width = Math.max(120, w | 0);
+  const height = Math.max(48, h | 0);
+  // setContentSize 較能精準縮到指定內容區，避免殘留上一模式高度
+  try {
+    mainWindow.setContentSize(width, height);
+  } catch {
+    mainWindow.setSize(width, height);
+  }
   if (chrome) applyMiniTaskbar(false);
   saveSettings();
 });

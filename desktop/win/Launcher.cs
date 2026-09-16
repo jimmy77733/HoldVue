@@ -319,7 +319,7 @@ namespace HoldVue
             // 極簡模式：不在工作列顯示，僅系統匣（Mac 版 Electron 維持 Dock 行為）
             ShowInTaskbar = false;
             TopMost = true;
-            MinimumSize = new Size(320, 60);
+            MinimumSize = new Size(120, 48);
             ClientSize = new Size(300, 78);
             BackColor = Color.FromArgb(28, 28, 30);
             Padding = Padding.Empty;
@@ -441,7 +441,7 @@ namespace HoldVue
             }
             _widgetMenu.Items.Add(_opacityRoot);
             _widgetMenu.Items.Add(new ToolStripSeparator());
-            _widgetMenu.Items.Add("尺寸：系統列", null, (s, e) => ApplySize(320, 82));
+            _widgetMenu.Items.Add("尺寸：系統列", null, (s, e) => EvalJs("holdvueMenu('size-sys')"));
             _itemStockSize = new ToolStripMenuItem("尺寸：股票列", null, (s, e) => EvalJs("holdvueMenu('size-stock')"));
             _widgetMenu.Items.Add(_itemStockSize);
             _itemFull = new ToolStripMenuItem("完整介面 / 設定", null, (s, e) => EvalJs("holdvueMenu('full')"));
@@ -640,7 +640,7 @@ namespace HoldVue
                 else if (cmd == "resizeStart")
                 {
                     string edge = ReadStr(raw, "edge");
-                    if (edge != "se" && edge != "sw") return;
+                    if (edge != "se" && edge != "sw" && edge != "s") return;
                     _resizeEdge = edge;
                     _resizeStartCursor = Cursor.Position;
                     _resizeStartBounds = Bounds;
@@ -660,11 +660,15 @@ namespace HoldVue
                         w = Math.Max(MinimumSize.Width, b.Width + dx);
                         h = Math.Max(MinimumSize.Height, b.Height + dy);
                     }
-                    else
+                    else if (_resizeEdge == "sw")
                     {
                         w = Math.Max(MinimumSize.Width, b.Width - dx);
                         h = Math.Max(MinimumSize.Height, b.Height + dy);
                         x = b.X + (b.Width - w);
+                    }
+                    else // s：底邊只調高度
+                    {
+                        h = Math.Max(MinimumSize.Height, b.Height + dy);
                     }
                     Bounds = new Rectangle(x, y, w, h);
                 }

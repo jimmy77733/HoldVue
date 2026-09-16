@@ -5,6 +5,11 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (e.g. v1.1.0). Leave empty to use the pushed tag.'
+        required: false
+        default: ''
 
 permissions:
   contents: write
@@ -47,18 +52,29 @@ jobs:
         with:
           node-version: 22
       - run: npm ci
-      - run: npm run pack:mac
+      - name: Build macOS zip (x64 + arm64)
+        run: npm run pack:mac
+      - name: List and stage mac artifacts
+        run: |
+          mkdir -p dist/mac-out
+          ls -la dist || true
+          shopt -s nullglob
+          for f in dist/*.zip; do
+            cp "$f" dist/mac-out/
+          done
+          arm=$(ls dist/*arm64*.zip 2>/dev/null | head -1 || true)
+          x64=$(ls dist/*x64*.zip 2>/dev/null | head -1 || true)
+          if [ -n "$arm" ]; then cp "$arm" dist/mac-out/HoldVue-macOS-arm64.zip; fi
+          if [ -n "$x64" ]; then cp "$x64" dist/mac-out/HoldVue-macOS-x64.zip; fi
+          ls -la dist/mac-out
       - uses: actions/upload-artifact@v4
         with:
           name: mac
-          path: |
-            dist/*.zip
-            dist/*.yml
-            dist/*.blockmap
+          path: dist/mac-out/*.zip
+          if-no-files-found: error
 
   publish:
     needs: [build-win, build-mac]
-    if: always() && needs.build-win.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -66,17 +82,18 @@ jobs:
           name: win
           path: artifacts
       - uses: actions/download-artifact@v4
-        if: needs.build-mac.result == 'success'
-        continue-on-error: true
         with:
           name: mac
           path: artifacts
+      - name: Show artifacts
+        run: find artifacts -type f | sort
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
-          files: |
-            artifacts/**/*
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag != '' && inputs.tag || github.ref_name }}
+          name: HoldVue ${{ github.event_name == 'workflow_dispatch' && inputs.tag != '' && inputs.tag || github.ref_name }}
+          files: artifacts/*
           generate_release_notes: true
+          fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

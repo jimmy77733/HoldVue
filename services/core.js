@@ -72,10 +72,19 @@ function formatPrice(v, prefix) {
 }
 
 function formatRate(bps) {
-  const kb = Math.max(0, bps) / 1024;
+  const kb = Math.max(0, Number(bps) || 0) / 1024;
   if (kb >= 1024) return (kb / 1024).toFixed(2) + ' MB/s';
   return kb.toFixed(2) + ' KB/s';
 }
+
+/** 即時系統狀態（與報價快取分離，較高頻更新） */
+const sysLive = {
+  cpu: '0',
+  mem: '0',
+  up: '0.00 KB/s',
+  down: '0.00 KB/s',
+  t: 0
+};
 
 function cpuPercent() {
   const cpus = os.cpus();
@@ -93,103 +102,186 @@ function cpuPercent() {
   const dt = total - cpuPercent.prev.total;
   cpuPercent.prev = { idle, total };
   if (dt <= 0) return 0;
-  return Math.round((1 - di / dt) * 100);
+  return Math.max(0, Math.min(100, Math.round((1 - di / dt) * 100)));
 }
 
 function memPercent() {
   const total = os.totalmem();
   const free = os.freemem();
-  return Math.round(((total - free) / total) * 100);
+  // 接近工作管理員：已使用 = total - available；Node freemem 近似 available
+  return Math.max(0, Math.min(100, Math.round(((total - free) / total) * 100)));
 }
 
-function netRates() {
-  const nics = os.networkInterfaces();
+function readLinuxNetBytes() {
   let rx = 0;
   let tx = 0;
-  // Node os.networkInterfaces has no counters; approximate with /proc or powershell is hard.
-  // Use process.hrtime sampling via optional reading — fallback zeros, updated by updater sample file if present.
-  // Cross-platform: track using performance of getifaddrs is unavailable in pure node.
-  // We'll use a lightweight internal counter based on previous quotes if systeminformation not installed.
-  try {
-    // Windows: typeperf is slow. Use zero-friendly defaults updated asynchronously.
-    if (process.platform === 'linux' && fs.existsSync('/proc/net/dev')) {
-      const text = fs.readFileSync('/proc/net/dev', 'utf8');
-      for (const line of text.split('\n').slice(2)) {
-        const p = line.trim().split(/\s+/);
-        if (p.length < 10) continue;
-        const name = p[0].replace(':', '');
-        if (/lo|docker|veth|br-|isatap|Teredo/i.test(name)) continue;
-        rx += Number(p[1]) || 0;
-        tx += Number(p[9]) || 0;
-      }
-    }
-  } catch {}
+  if (!fs.existsSync('/proc/net/dev')) return { rx, tx };
+  const text = fs.readFileSync('/proc/net/dev', 'utf8');
+  for (const line of text.split('\n').slice(2)) {
+    const p = line.trim().split(/\s+/);
+    if (p.length < 10) continue;
+    const name = p[0].replace(':', '');
+    if (/lo|docker|veth|br-|virbr|isatap|Teredo/i.test(name)) continue;
+    rx += Number(p[1]) || 0;
+    tx += Number(p[9]) || 0;
+  }
+  return { rx, tx };
+}
 
+function netRatesFromCounters(rx, tx) {
   const now = Date.now();
   if (!prevNet) {
     prevNet = { rx, tx, t: now };
-    return { up: '0.00 KB/s', down: '0.00 KB/s' };
+    return { up: sysLive.up, down: sysLive.down };
   }
-  const dt = Math.max(0.001, (now - prevNet.t) / 1000);
+  const dt = Math.max(0.2, (now - prevNet.t) / 1000);
+  // 計數器重設／溢位時略過本次
+  if (tx < prevNet.tx || rx < prevNet.rx) {
+    prevNet = { rx, tx, t: now };
+    return { up: sysLive.up, down: sysLive.down };
+  }
   const up = (tx - prevNet.tx) / dt;
   const down = (rx - prevNet.rx) / dt;
   prevNet = { rx, tx, t: now };
-  // On win/mac without counters, keep last known from external sampler
-  if (process.platform === 'win32' || process.platform === 'darwin') {
-    return netRates.cached || { up: '0.00 KB/s', down: '0.00 KB/s' };
-  }
   return { up: formatRate(up), down: formatRate(down) };
 }
 
-async function sampleNetWinMac() {
+function netRates() {
+  if (process.platform === 'linux') {
+    const { rx, tx } = readLinuxNetBytes();
+    return netRatesFromCounters(rx, tx);
+  }
+  return { up: sysLive.up, down: sysLive.down };
+}
+
+/** Windows：用 CIM（不受中文計數器名稱影響），對齊工作管理員 */
+function sampleSysWin() {
+  const { execFile } = require('child_process');
+  const ps = `
+$ErrorActionPreference='SilentlyContinue'
+$cpu = -1
+$util = Get-CimInstance Win32_PerfFormattedData_Counters_ProcessorInformation -Filter "Name='_Total'"
+if ($util -and $null -ne $util.PercentProcessorUtility) { $cpu = [int][math]::Round([double]$util.PercentProcessorUtility) }
+if ($cpu -lt 0) {
+  $p = Get-CimInstance Win32_PerfFormattedData_PerfOS_Processor -Filter "Name='_Total'"
+  if ($p) { $cpu = [int]$p.PercentProcessorTime }
+}
+$skip = 'isatap|Teredo|Loopback|Pseudo|VPN|Npc|WAN Miniport|vEthernet|Hyper-V|VirtualBox|VMware|Bluetooth|NpcTunnel|Wi-Fi Direct'
+$nics = @(Get-CimInstance Win32_PerfFormattedData_Tcpip_NetworkInterface | Where-Object { $_.Name -notmatch $skip })
+$up = 0.0; $down = 0.0
+if ($nics.Count -gt 0) {
+  $up = [double](($nics | Measure-Object BytesSentPerSec -Sum).Sum)
+  $down = [double](($nics | Measure-Object BytesReceivedPerSec -Sum).Sum)
+}
+# Formatted 偶發全 0 時改用 Raw 累計差速
+if ($up -eq 0 -and $down -eq 0) {
+  $raw = @(Get-CimInstance Win32_PerfRawData_Tcpip_NetworkInterface | Where-Object { $_.Name -notmatch $skip })
+  if ($raw.Count -gt 0) {
+    $up = -1
+    $down = -1
+    $tx = [double](($raw | Measure-Object BytesSentPerSec -Sum).Sum)
+    $rx = [double](($raw | Measure-Object BytesReceivedPerSec -Sum).Sum)
+    Write-Output ("{0}|RAW|{1}|{2}" -f $cpu, $tx, $rx)
+    exit 0
+  }
+}
+Write-Output ("{0}|FMT|{1}|{2}" -f $cpu, $up, $down)
+`;
+  return new Promise((resolve) => {
+    execFile(
+      'powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', ps],
+      { timeout: 20000, windowsHide: true, encoding: 'utf8' },
+      (err, stdout) => {
+        if (!err && stdout) {
+          const line = String(stdout).trim().split(/\r?\n/).filter(Boolean).pop() || '';
+          const parts = line.split('|');
+          if (parts.length >= 4) {
+            const cpu = Number(parts[0]);
+            const mode = parts[1];
+            const a = Number(parts[2]);
+            const b = Number(parts[3]);
+            if (Number.isFinite(cpu) && cpu >= 0) sysLive.cpu = String(Math.max(0, Math.min(100, Math.round(cpu))));
+            else sysLive.cpu = String(cpuPercent());
+            if (mode === 'RAW' && Number.isFinite(a) && Number.isFinite(b)) {
+              const rates = netRatesFromCounters(b, a); // rx, tx
+              sysLive.up = rates.up;
+              sysLive.down = rates.down;
+            } else if (mode === 'FMT' && Number.isFinite(a) && Number.isFinite(b)) {
+              sysLive.up = formatRate(a);
+              sysLive.down = formatRate(b);
+            }
+          } else {
+            sysLive.cpu = String(cpuPercent());
+          }
+        } else {
+          sysLive.cpu = String(cpuPercent());
+        }
+        sysLive.mem = String(memPercent());
+        sysLive.t = Date.now();
+        resolve(sysLive);
+      }
+    );
+  });
+}
+
+async function sampleSysDarwin() {
+  const { execFile } = require('child_process');
+  sysLive.cpu = String(cpuPercent());
+  sysLive.mem = String(memPercent());
+  await new Promise((resolve) => {
+    execFile('netstat', ['-ib'], { timeout: 5000 }, (err, stdout) => {
+      if (!err && stdout) {
+        let rx = 0;
+        let tx = 0;
+        for (const line of String(stdout).split('\n').slice(1)) {
+          const p = line.trim().split(/\s+/);
+          if (p.length < 10) continue;
+          if (/^lo|^gif|^stf|^awdl|^llw|^bridge|^utun/i.test(p[0])) continue;
+          rx += Number(p[6]) || 0;
+          tx += Number(p[9]) || 0;
+        }
+        const rates = netRatesFromCounters(rx, tx);
+        sysLive.up = rates.up;
+        sysLive.down = rates.down;
+      }
+      sysLive.t = Date.now();
+      resolve();
+    });
+  });
+  return sysLive;
+}
+
+let sysSampleBusy = false;
+async function sampleSysMetrics() {
+  if (sysSampleBusy) return sysLive;
+  sysSampleBusy = true;
   try {
     if (process.platform === 'win32') {
-      const { execFile } = require('child_process');
-      const ps = `
-$sent = (Get-Counter '\\Network Interface(*)\\Bytes Sent/sec' -EA SilentlyContinue).CounterSamples | ? { $_.InstanceName -notmatch 'isatap|Teredo|Loopback|Pseudo' } | Measure-Object CookedValue -Sum
-$recv = (Get-Counter '\\Network Interface(*)\\Bytes Received/sec' -EA SilentlyContinue).CounterSamples | ? { $_.InstanceName -notmatch 'isatap|Teredo|Loopback|Pseudo' } | Measure-Object CookedValue -Sum
-Write-Output (($sent.Sum|%{[double]$_});($recv.Sum|%{[double]$_}))
-`;
-      await new Promise((resolve) => {
-        execFile('powershell.exe', ['-NoProfile', '-Command', ps], { timeout: 8000, windowsHide: true }, (err, stdout) => {
-          if (!err && stdout) {
-            const parts = String(stdout).trim().split(/\s+/).map(Number);
-            if (parts.length >= 2 && parts.every((n) => !Number.isNaN(n))) {
-              netRates.cached = { up: formatRate(parts[0]), down: formatRate(parts[1]) };
-            }
-          }
-          resolve();
-        });
-      });
+      await sampleSysWin();
     } else if (process.platform === 'darwin') {
-      const { execFile } = require('child_process');
-      await new Promise((resolve) => {
-        execFile('netstat', ['-ib'], { timeout: 5000 }, (err, stdout) => {
-          if (err || !stdout) return resolve();
-          let rx = 0;
-          let tx = 0;
-          for (const line of stdout.split('\n').slice(1)) {
-            const p = line.trim().split(/\s+/);
-            if (p.length < 10) continue;
-            if (/^lo|^gif|^stf|^awdl|^llw|^bridge|^utun/i.test(p[0])) continue;
-            // Name Mtu Network Address Ipkts Ierrs Ibytes Opkts Oerrs Obytes
-            rx += Number(p[6]) || 0;
-            tx += Number(p[9]) || 0;
-          }
-          const now = Date.now();
-          if (sampleNetWinMac.prev) {
-            const dt = Math.max(0.001, (now - sampleNetWinMac.prev.t) / 1000);
-            netRates.cached = {
-              up: formatRate((tx - sampleNetWinMac.prev.tx) / dt),
-              down: formatRate((rx - sampleNetWinMac.prev.rx) / dt)
-            };
-          }
-          sampleNetWinMac.prev = { rx, tx, t: now };
-          resolve();
-        });
-      });
+      await sampleSysDarwin();
+    } else {
+      sysLive.cpu = String(cpuPercent());
+      sysLive.mem = String(memPercent());
+      const net = netRates();
+      sysLive.up = net.up;
+      sysLive.down = net.down;
+      sysLive.t = Date.now();
     }
-  } catch {}
+  } catch {
+    sysLive.cpu = String(cpuPercent());
+    sysLive.mem = String(memPercent());
+    sysLive.t = Date.now();
+  } finally {
+    sysSampleBusy = false;
+  }
+  return sysLive;
+}
+
+/** @deprecated 保留名稱供 updateOnce 相容 */
+async function sampleNetWinMac() {
+  return sampleSysMetrics();
 }
 
 function yahooInTradingPeriod(period, nowSec) {
@@ -463,12 +555,11 @@ async function updateOnce() {
     }
   }
 
-  const net = netRates();
   const sys = {
-    cpu: String(cpuPercent()),
-    mem: String(memPercent()),
-    up: net.up,
-    down: net.down
+    cpu: sysLive.cpu,
+    mem: sysLive.mem || String(memPercent()),
+    up: sysLive.up,
+    down: sysLive.down
   };
   const out = {
     panel: buildPanel(cfg, values, sys),
@@ -529,10 +620,20 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (p === '/api/quotes') {
-      const json = fs.existsSync(CACHE_FILE)
-        ? fs.readFileSync(CACHE_FILE, 'utf8')
-        : '{"panel":"--","updated":"--"}';
-      return send(res, 200, 'application/json; charset=utf-8', json);
+      let data = { panel: '--', updated: '--' };
+      try {
+        if (fs.existsSync(CACHE_FILE)) data = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf8'));
+      } catch {}
+      // 覆寫為較新的系統取樣（不需等 15s 報價週期）
+      data.CPU = sysLive.cpu;
+      data.RAM = sysLive.mem || String(memPercent());
+      data.UP = sysLive.up;
+      data.DOWN = sysLive.down;
+      data.cpu = data.CPU;
+      data.mem = data.RAM;
+      data.up = data.UP;
+      data.down = data.DOWN;
+      return send(res, 200, 'application/json; charset=utf-8', JSON.stringify(data));
     }
 
     if (p === '/api/config' && method === 'GET') {
@@ -616,7 +717,10 @@ fs.writeFileSync(PID_FILE, String(process.pid), 'utf8');
 
 server.listen(PORT, '127.0.0.1', async () => {
   console.log(`HoldVue service http://127.0.0.1:${PORT}/`);
+  try { await sampleSysMetrics(); } catch {}
   try { await updateOnce(); } catch (e) { console.error('update', e.message || e); }
+  // 系統狀態約 2.5 秒取樣；報價仍 15 秒
+  setInterval(() => { sampleSysMetrics().catch(() => {}); }, 2500);
   setInterval(async () => {
     try {
       if (fs.existsSync(FLAG_FILE)) {

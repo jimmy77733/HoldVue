@@ -34,23 +34,24 @@ html,body{height:100%; margin:0; overflow:hidden; background:transparent; color:
   box-shadow:var(--shadow);
   overflow:hidden;
   cursor:default;
-  container-type:inline-size;
-  container-name:mini;
 }
 .mini-grid{
   flex:1;
   display:grid;
-  grid-template-columns:1fr 1fr;
-  column-gap:10px;
+  grid-template-columns:max-content max-content;
+  column-gap:8px;
   row-gap:2px;
-  padding:8px 12px;
+  padding:8px 10px;
   align-content:center;
+  align-self:start;
+  width:max-content;
+  justify-content:start;
 }
 .mini-cell{
   display:flex; align-items:baseline; gap:4px;
   padding:2px 0;
   font-size:12.5px; line-height:1.3; white-space:nowrap;
-  overflow:visible; min-width:0;
+  overflow:visible; width:max-content;
 }
 .mini-cell .k{color:var(--muted); font-weight:500; flex:0 0 auto}
 .mini-cell .v{font-weight:600; font-variant-numeric:tabular-nums; letter-spacing:-.02em;
@@ -85,30 +86,62 @@ html.lowcontrast .mini-cell .sess.closed,
 html.lowcontrast .mini-cell .sess.h24{
   color:var(--muted); border-color:var(--line); background:var(--fill);
 }
-/* 預設單欄；夠寬才兩欄（門檻較嚴，避免並排左右大片留白） */
-.mini[data-mode="stock"] .mini-grid{
-  grid-template-columns:1fr;
+.mini[data-mode="sys"] .mini-grid{
+  flex:0 0 auto;
+  align-self:start;
+  width:max-content;
+  max-width:none;
+  height:auto;
+  max-height:none;
+  overflow:visible;
+  grid-template-columns:max-content max-content;
+  column-gap:8px;
+  row-gap:1px;
+  padding:4px 10px;
+  justify-content:start;
   align-content:start;
-  overflow:auto;
+}
+.mini[data-mode="sys"] .mini-cell{
+  width:max-content;
+  justify-content:flex-start;
+  padding:0;
+  line-height:1.25;
+}
+.mini[data-mode="stock"] .mini-grid{
+  /* 填滿視窗高度，內容超出時可滾輪捲動（不顯示捲軸） */
+  flex:1 1 auto;
+  align-self:stretch;
+  min-height:0;
+  width:100%;
+  max-width:100%;
+  box-sizing:border-box;
+  grid-template-columns:max-content;
+  justify-content:start;
+  justify-items:start;
+  align-content:start;
+  overflow-x:hidden;
+  overflow-y:auto;
   padding:6px 8px;
-  column-gap:12px;
+  column-gap:10px;
   row-gap:3px;
+  scrollbar-width:none;
+  -ms-overflow-style:none;
+}
+.mini[data-mode="stock"] .mini-grid::-webkit-scrollbar{
+  width:0 !important;
+  height:0 !important;
+  display:none !important;
 }
 .mini[data-mode="stock"] .mini-cell{
   font-size:12px;
   padding:2px 0;
-  gap:6px;
-  width:100%;
+  gap:4px;
+  width:max-content;
   box-sizing:border-box;
+  justify-content:flex-start;
 }
-@container mini (min-width: 560px){
-  .mini[data-mode="stock"] .mini-grid{
-    grid-template-columns:1fr 1fr;
-  }
-  /* 兩欄時把標籤／價格／漲跌／盤別撐滿欄寬，減少右側空洞 */
-  .mini[data-mode="stock"] .mini-cell{
-    justify-content:space-between;
-  }
+.mini[data-mode="stock"].cols-2 .mini-grid{
+  grid-template-columns:max-content max-content;
 }
 .mini-lock{
   position:absolute; top:4px; right:6px; width:7px; height:7px; border-radius:50%;
@@ -227,13 +260,19 @@ html:not(.widget) .mini{display:none}
 html.widget .full{display:none}
 html.widget.fullmode .mini{display:none}
 html.widget.fullmode .full{display:block}
-/* 僅左下／右下可拉尺寸 */
+/* 左下／右下角＋底邊可調尺寸 */
 .resize-handle{
-  position:fixed; z-index:60; width:16px; height:16px;
-  bottom:0; opacity:0;
+  position:fixed; z-index:60; opacity:0;
+}
+.resize-handle.se,.resize-handle.sw{
+  width:16px; height:16px; bottom:0;
 }
 .resize-handle.se{right:0; cursor:nwse-resize}
 .resize-handle.sw{left:0; cursor:nesw-resize}
+.resize-handle.s{
+  left:16px; right:16px; bottom:0; height:8px;
+  cursor:ns-resize;
+}
 html:not(.widget) .resize-handle{display:none !important}
 </style>
 </head>
@@ -315,6 +354,7 @@ html:not(.widget) .resize-handle{display:none !important}
     <svg class="icon-moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 14.5A8.5 8.5 0 0 1 9.5 3 7 7 0 1 0 21 14.5z"/></svg>
   </button>
   <div class="resize-handle sw" data-edge="sw" title="調整大小"></div>
+  <div class="resize-handle s" data-edge="s" title="調整高度"></div>
   <div class="resize-handle se" data-edge="se" title="調整大小"></div>
 
 <script>
@@ -335,7 +375,27 @@ let lowContrast=localStorage.getItem('holdvue-lowcontrast')==='1';
 let clickTimes=[];
 let sizeFitDone=false;
 const TRIPLE_MS=650;
+/** 系統／股票各自記住視窗尺寸，互不覆蓋 */
+let modeSizes=(()=>{
+  try{ return JSON.parse(localStorage.getItem('holdvue-mode-sizes')||'{}')||{}; }
+  catch{ return {}; }
+})();
+// 清掉偏高的系統尺寸，改回貼齊內容
+if(modeSizes.sys && modeSizes.sys.h>72) delete modeSizes.sys;
 if(lowContrast) root.classList.add('lowcontrast');
+
+function currentMode(){ return locked?'sys':viewMode; }
+
+function persistModeSize(mode, w, h){
+  if(!mode||!(w>0)||!(h>0)) return;
+  modeSizes[mode]={w:Math.round(w), h:Math.round(h)};
+  try{ localStorage.setItem('holdvue-mode-sizes', JSON.stringify(modeSizes)); }catch{}
+}
+
+function rememberCurrentWindow(mode){
+  const m=mode||currentMode();
+  persistModeSize(m, window.innerWidth, window.innerHeight);
+}
 
 function post(msg){
   try{
@@ -423,18 +483,160 @@ function applyLockUi(){
   });
 }
 
-/** 僅在切換模式／選單指定尺寸時調整，避免定時刷新把使用者拉大的視窗縮回去 */
+/** 量測單一列的自然寬（加總子元素，避免被父層裁切時 scrollWidth 失真） */
+function cellNaturalWidth(cell){
+  const cs=getComputedStyle(cell);
+  const gap=parseFloat(cs.gap)||0;
+  const pad=(parseFloat(cs.paddingLeft)||0)+(parseFloat(cs.paddingRight)||0);
+  const kids=[...cell.children];
+  if(!kids.length) return Math.ceil(cell.scrollWidth||0);
+  let w=pad;
+  kids.forEach((kid,i)=>{
+    w+=Math.ceil(kid.getBoundingClientRect().width||kid.scrollWidth||0);
+    if(i<kids.length-1) w+=gap;
+  });
+  return Math.max(Math.ceil(w), Math.ceil(cell.scrollWidth||0));
+}
+
+/**
+ * 以儲存格自然寬高加總。
+ * @param {number} cols 明確欄數
+ * @param {{tight?:boolean}} [opts] tight：系統模式用，高度少留餘裕
+ */
+function measureMiniGridSize(cols, opts){
+  const grid=document.getElementById('miniGrid');
+  const cells=[...grid.querySelectorAll('.mini-cell')];
+  if(!cells.length) return {w:140, h:52};
+  cols=Math.max(1, cols|0);
+  const tight=!!(opts&&opts.tight);
+  const cs=getComputedStyle(grid);
+  const padX=(parseFloat(cs.paddingLeft)||0)+(parseFloat(cs.paddingRight)||0);
+  const padY=(parseFloat(cs.paddingTop)||0)+(parseFloat(cs.paddingBottom)||0);
+  const colGap=parseFloat(cs.columnGap)||0;
+  const rowGap=parseFloat(cs.rowGap)||0;
+  const colW=Array(cols).fill(0);
+  const rowH=[];
+  cells.forEach((cell, i)=>{
+    const col=i%cols;
+    const row=Math.floor(i/cols);
+    colW[col]=Math.max(colW[col], cellNaturalWidth(cell));
+    rowH[row]=Math.max(rowH[row]||0, Math.ceil(cell.getBoundingClientRect().height||cell.offsetHeight||16));
+  });
+  const contentW=colW.reduce((a,b)=>a+b,0)+colGap*Math.max(0, cols-1);
+  const contentH=rowH.reduce((a,b)=>a+b,0)+rowGap*Math.max(0, rowH.length-1);
+  const border=3; // 1.5px * 2
+  const widthPad=tight?8:10;
+  // 高度：緊貼內容 + border；系統模式不再多加垂直餘裕
+  const heightPad=tight?0:4;
+  return {
+    w:Math.max(120, Math.ceil(padX+contentW+border+widthPad)),
+    h:Math.max(tight?40:52, Math.ceil(padY+contentH+border+heightPad))
+  };
+}
+
+/** 縮放後若寬度仍裁切文字則補寬；高度不強制拉高（股票模式改以滾輪檢視） */
+function ensureMiniNoClip(baseW, baseH){
+  const mode=currentMode();
+  const cols=mode==='sys'?2:(document.getElementById('mini').classList.contains('cols-2')?2:1);
+  const need=measureMiniGridSize(cols);
+  if(need.w>baseW+1){
+    const h=mode==='sys'?need.h:baseH;
+    post({cmd:'resize', w:need.w, h});
+    persistModeSize(mode, need.w, h);
+  }else if(mode==='sys' && Math.abs(need.h-baseH)>1){
+    post({cmd:'resize', w:baseW, h:need.h});
+    persistModeSize('sys', baseW, need.h);
+  }
+}
+
+/** 股票模式：依內容決定兩欄並回傳貼齊文字的視窗尺寸 */
+function fitStockWindowSize(preferTwo){
+  const mini=document.getElementById('mini');
+  const n=Math.max(1, (cfg.symbols||[]).length);
+  const useTwo=preferTwo!==false && n>=2;
+  mini.classList.toggle('cols-2', useTwo);
+  void mini.offsetWidth;
+  const {w,h}=measureMiniGridSize(useTwo?2:1);
+  return {w, h:Math.min(420, Math.max(80, h)), useTwo};
+}
+
+/** 系統監控：永遠貼齊內容，不受股票模式高寬影響 */
+function fitSysWindowSize(){
+  const mini=document.getElementById('mini');
+  const grid=document.getElementById('miniGrid');
+  mini.classList.remove('cols-2');
+  mini.dataset.mode='sys';
+  void mini.offsetWidth;
+  const measured=measureMiniGridSize(2, {tight:true});
+  // 以實際排版盒高為準，取較小值避免底部多餘空白
+  const laid=Math.ceil(grid.getBoundingClientRect().height)+3;
+  return {w:measured.w, h:Math.max(40, Math.min(measured.h, laid))};
+}
+
+/** 僅手動拉寬／縮小時切換單／雙欄 */
+function syncStockColsToWidth(snap){
+  if(!isWidget || root.classList.contains('fullmode')) return;
+  if(currentMode()!=='stock') return;
+  const mini=document.getElementById('mini');
+  const n=(cfg.symbols||[]).length;
+  if(n<2){ mini.classList.remove('cols-2'); return; }
+  const wasTwo=mini.classList.contains('cols-2');
+  const twoSize=(()=>{ mini.classList.add('cols-2'); void mini.offsetWidth; return measureMiniGridSize(2); })();
+  const keep=window.innerWidth>=(wasTwo?twoSize.w-8:twoSize.w);
+  mini.classList.toggle('cols-2', keep);
+  if(snap){
+    if(wasTwo && !keep){
+      const {w}=measureMiniGridSize(1);
+      post({cmd:'resize', w, h:window.innerHeight});
+      persistModeSize('stock', w, window.innerHeight);
+    }else{
+      rememberCurrentWindow('stock');
+    }
+  }
+}
+
+/**
+ * 套用目前模式自己的視窗尺寸（與另一模式隔離）。
+ * @param {boolean} force 強制依內容重新量測
+ */
 function resizeForMode(force){
   if(!isWidget || root.classList.contains('fullmode')) return;
   if(!force && sizeFitDone) return;
-  if(viewMode==='sys'){
-    post({cmd:'resize', w:320, h:82});
-  }else{
-    const rows=Math.ceil(Math.max(1, cfg.symbols.length)/2);
-    const h=Math.min(420, Math.max(120, 20 + rows*26));
-    post({cmd:'resize', w:580, h:h});
-  }
-  sizeFitDone=true;
+  const mode=currentMode();
+  const apply=()=>{
+    let w, h;
+    const saved=modeSizes[mode];
+    if(mode==='stock'){
+      // 進入股票模式：寬度一律貼齊內容；高度可沿用上次（方便滾輪檢視）
+      const mini=document.getElementById('mini');
+      mini.classList.remove('cols-2');
+      void mini.offsetWidth;
+      const oneW=measureMiniGridSize(1).w;
+      const preferTwo=!!(saved && saved.w>=oneW*2-24 && (cfg.symbols||[]).length>=2);
+      const fit=fitStockWindowSize(preferTwo);
+      w=fit.w;
+      h=(saved && saved.h>=64)?saved.h:fit.h;
+      persistModeSize('stock', w, h);
+    }else if(!force && saved && saved.w>=120 && saved.h>=40 && saved.h<=72){
+      fitSysWindowSize();
+      w=saved.w; h=saved.h;
+    }else{
+      ({w,h}=fitSysWindowSize());
+      persistModeSize('sys', w, h);
+    }
+    post({cmd:'resize', w, h});
+    sizeFitDone=true;
+    if(mode==='sys'){
+      requestAnimationFrame(()=>{
+        const again=fitSysWindowSize();
+        post({cmd:'resize', w:again.w, h:again.h});
+        persistModeSize('sys', again.w, again.h);
+      });
+    }else{
+      requestAnimationFrame(()=>requestAnimationFrame(()=>ensureMiniNoClip(w, h)));
+    }
+  };
+  requestAnimationFrame(()=>requestAnimationFrame(apply));
 }
 
 function renderMini(){
@@ -453,6 +655,7 @@ function renderMini(){
   }
 
   if(mode==='sys'){
+    mini.classList.remove('cols-2');
     cell('上傳:', quotes.UP || quotes.up || '0.00 KB/s');
     cell('下載:', quotes.DOWN || quotes.down || '0.00 KB/s');
     cell('CPU:', (quotes.CPU ?? quotes.cpu ?? '--')+' %');
@@ -484,10 +687,13 @@ function toggleView(){
     flashHint('已鎖定');
     return;
   }
+  // 離開前先記住目前模式尺寸，再套用另一模式自己的尺寸
+  rememberCurrentWindow(currentMode());
   viewMode=viewMode==='sys'?'stock':'sys';
   localStorage.setItem('holdvue-view', viewMode);
   sizeFitDone=false;
   renderMini();
+  // 兩邊切換都重新套用（股票會智能收斂寬度）
   resizeForMode(true);
 }
 
@@ -578,6 +784,14 @@ function bindDragRegion(el, opts){
     e.stopPropagation();
     post({cmd:'menu', locked: locked ? 1 : 0});
   });
+  // 股票模式：高度不足時用滾輪瀏覽（不顯示捲軸）
+  mini.addEventListener('wheel', e=>{
+    if(currentMode()!=='stock') return;
+    const grid=document.getElementById('miniGrid');
+    if(!grid || grid.scrollHeight<=grid.clientHeight+1) return;
+    grid.scrollTop+=e.deltaY;
+    e.preventDefault();
+  }, {passive:false});
   // 完整設定頁：拖標題列區域
   bindDragRegion(document.querySelector('.full .hero'));
 
@@ -593,18 +807,25 @@ function bindDragRegion(el, opts){
       post({cmd:'resizeStart', edge: handle.dataset.edge});
     });
     handle.addEventListener('pointermove', ()=>{
-      if(active) post({cmd:'resizeMove'});
+      if(active){
+        post({cmd:'resizeMove'});
+        syncStockColsToWidth(false);
+      }
     });
     handle.addEventListener('pointerup', e=>{
       if(!active) return;
       active=false;
       try{ handle.releasePointerCapture(e.pointerId); }catch{}
       post({cmd:'resizeEnd'});
+      syncStockColsToWidth(true);
+      rememberCurrentWindow();
     });
     handle.addEventListener('pointercancel', ()=>{
       if(!active) return;
       active=false;
       post({cmd:'resizeEnd'});
+      syncStockColsToWidth(true);
+      rememberCurrentWindow();
     });
   });
 })();
@@ -612,8 +833,17 @@ function bindDragRegion(el, opts){
 window.holdvueMenu=function(act, val){
   if(act==='toggle') toggleView();
   else if(act==='theme') setTheme(root.getAttribute('data-theme')==='dark'?'light':'dark');
-  else if(act==='size-sys'){ sizeFitDone=false; post({cmd:'resize', w:320, h:82}); sizeFitDone=true; }
-  else if(act==='size-stock'){ if(!locked){ viewMode='stock'; localStorage.setItem('holdvue-view','stock'); } sizeFitDone=false; renderMini(); resizeForMode(true); }
+  else if(act==='size-sys'){
+    sizeFitDone=false; viewMode='sys';
+    if(!locked) localStorage.setItem('holdvue-view','sys');
+    delete modeSizes.sys;
+    renderMini(); resizeForMode(true);
+  }
+  else if(act==='size-stock'){
+    if(!locked){ viewMode='stock'; localStorage.setItem('holdvue-view','stock'); }
+    sizeFitDone=false; delete modeSizes.stock;
+    renderMini(); resizeForMode(true);
+  }
   else if(act==='full') enterFullMode();
   else if(act==='reload') refreshQuotes();
   else if(act==='lowcontrast'){
@@ -647,8 +877,17 @@ document.getElementById('ctx').addEventListener('click', e=>{
   else if(act==='topmost') post({cmd:'topmost'});
   else if(act==='clickthrough') post({cmd:'clickthrough'});
   else if(act==='lowcontrast'){ setLowContrast(!lowContrast); flashHint(lowContrast?'低對比：開':'低對比：關'); }
-  else if(act==='size-sys'){ sizeFitDone=false; post({cmd:'resize', w:320, h:82}); sizeFitDone=true; }
-  else if(act==='size-stock'){ viewMode='stock'; if(!locked){ localStorage.setItem('holdvue-view','stock'); } sizeFitDone=false; renderMini(); resizeForMode(true); }
+  else if(act==='size-sys'){
+    sizeFitDone=false; viewMode='sys';
+    if(!locked) localStorage.setItem('holdvue-view','sys');
+    delete modeSizes.sys;
+    renderMini(); resizeForMode(true);
+  }
+  else if(act==='size-stock'){
+    viewMode='stock'; if(!locked){ localStorage.setItem('holdvue-view','stock'); }
+    sizeFitDone=false; delete modeSizes.stock;
+    renderMini(); resizeForMode(true);
+  }
   else if(act==='full') enterFullMode();
   else if(act==='reload') refreshQuotes();
   else if(act==='hide') post({cmd:'hide'});
@@ -806,7 +1045,7 @@ async function refreshAll(){
   await refreshQuotes();
 }
 refreshAll().then(()=>{
-  if(isWidget && !locked && viewMode==='stock'){
+  if(isWidget){
     sizeFitDone=false;
     resizeForMode(true);
   }

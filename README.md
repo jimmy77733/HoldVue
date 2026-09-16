@@ -23,7 +23,8 @@
 | 平台 | 檔案 | 說明 |
 |------|------|------|
 | Windows x64 | `HoldVue-Windows-x64.exe` | 原生 WebView2 單檔（內含 UI／服務／Node，無須另裝 Node） |
-| macOS | `HoldVue-*-mac.zip` | Electron 版，解壓後執行 HoldVue |
+| macOS Apple Silicon | `HoldVue-macOS-arm64.zip` | Electron 版，解壓後執行 HoldVue |
+| macOS Intel | `HoldVue-macOS-x64.zip` | Electron 版，解壓後執行 HoldVue |
 
 > Windows 需 [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)（Win11 通常已內建）。  
 > 開發模式需 [Node.js 18+](https://nodejs.org/)。
