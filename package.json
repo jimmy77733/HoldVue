@@ -1,8 +1,11 @@
 {
   "name": "holdvue",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "HoldVue — minimal floating stock & system monitor (TrafficMonitor-style)",
-  "author": "jimmy77733",
+  "author": {
+    "name": "jimmy77733",
+    "email": "jimmy880702@gmail.com"
+  },
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -14,7 +17,9 @@
     "start": "electron .",
     "dev": "electron .",
     "pack:win": "electron-builder --win --x64",
-    "pack:mac": "electron-builder --mac",
+    "pack:mac": "electron-builder --mac zip --arm64 --x64 --publish never",
+    "pack:mac:arm64": "electron-builder --mac zip --arm64 --publish never",
+    "pack:mac:x64": "electron-builder --mac zip --x64 --publish never",
     "pack:linux": "electron-builder --linux --x64"
   },
   "build": {
@@ -45,16 +50,12 @@
       "signAndEditExecutable": false
     },
     "mac": {
-      "target": [
-        {
-          "target": "zip",
-          "arch": ["x64", "arm64"]
-        }
-      ],
+      "target": ["zip"],
       "icon": "assets/holdvue.png",
       "category": "public.app-category.finance",
       "identity": null,
       "gatekeeperAssess": false,
+      "hardenedRuntime": false,
       "artifactName": "HoldVue-${version}-mac-${arch}.${ext}"
     },
     "linux": {
