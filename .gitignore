@@ -1,0 +1,41 @@
+# Dependencies
+node_modules/
+dist/
+out/
+
+# Build outputs
+bin/
+obj/
+publish/
+desktop/win/bin/
+desktop/win/obj/
+desktop/win/node/
+desktop/win/payload-staging/
+desktop/win/payload.zip
+*.exe
+*.dll
+*.pdb
+*.zip
+*.dmg
+*.AppImage
+!assets/**
+
+# Runtime / user data
+app/quotes.json
+app/window.json
+app/webview2/
+app/*.pid
+app/refresh.flag
+app/_once.ps1
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.log
+pack-win.log
+.env
+.cursor/
+__pycache__/
+*.pyc

@@ -1,0 +1,82 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-win:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Bundle app + portable Node into payload.zip
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $nodeVer = '22.11.0'
+          Invoke-WebRequest -Uri "https://nodejs.org/dist/v$nodeVer/node-v$nodeVer-win-x64.zip" -OutFile node-win.zip
+          Expand-Archive node-win.zip -DestinationPath node-unpack
+          $nodeDir = Get-ChildItem node-unpack -Directory | Select-Object -First 1
+          Move-Item $nodeDir.FullName desktop/win/node
+          powershell -NoProfile -ExecutionPolicy Bypass -File desktop/win/prepare-payload.ps1
+          Remove-Item node-win.zip, node-unpack -Recurse -Force -ErrorAction SilentlyContinue
+      - name: Publish HoldVue.exe (WebView2, recommended on Windows)
+        run: dotnet publish desktop/win/HoldVue.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -o dist/win-native
+      - name: Rename artifact
+        run: Copy-Item dist/win-native/HoldVue.exe dist/HoldVue-Windows-x64.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: win
+          path: dist/HoldVue-Windows-x64.exe
+
+  build-mac:
+    runs-on: macos-latest
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npm run pack:mac
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mac
+          path: |
+            dist/*.zip
+            dist/*.yml
+            dist/*.blockmap
+
+  publish:
+    needs: [build-win, build-mac]
+    if: always() && needs.build-win.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: win
+          path: artifacts
+      - uses: actions/download-artifact@v4
+        if: needs.build-mac.result == 'success'
+        continue-on-error: true
+        with:
+          name: mac
+          path: artifacts
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: |
+            artifacts/**/*
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

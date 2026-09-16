@@ -1,0 +1,74 @@
+{
+  "name": "holdvue",
+  "version": "1.0.0",
+  "description": "HoldVue — minimal floating stock & system monitor (TrafficMonitor-style)",
+  "author": "jimmy77733",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jimmy77733/HoldVue.git"
+  },
+  "main": "electron/main.js",
+  "scripts": {
+    "service": "node services/core.js",
+    "start": "electron .",
+    "dev": "electron .",
+    "pack:win": "electron-builder --win --x64",
+    "pack:mac": "electron-builder --mac",
+    "pack:linux": "electron-builder --linux --x64"
+  },
+  "build": {
+    "appId": "com.holdvue.app",
+    "productName": "HoldVue",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "electron/**/*",
+      "services/**/*",
+      "app/index.html",
+      "app/config.json",
+      "assets/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "services/**/*",
+      "app/config.json",
+      "assets/**/*"
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "zip"
+      ],
+      "icon": "assets/holdvue.ico",
+      "signAndEditExecutable": false
+    },
+    "mac": {
+      "target": [
+        "zip"
+      ],
+      "icon": "assets/holdvue.png",
+      "category": "public.app-category.finance",
+      "identity": null,
+      "gatekeeperAssess": false
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "icon": "assets/holdvue.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

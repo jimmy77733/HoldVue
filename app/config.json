@@ -1,0 +1,14 @@
+{
+  "columns": 2,
+  "labelWidth": 7,
+  "valueWidth": 9,
+  "symbols": [
+    { "id": "TWII", "label": "加權", "yahoo": "^TWII" },
+    { "id": "s2330", "label": "2330", "yahoo": "2330.TW" },
+    { "id": "s0050", "label": "0050", "yahoo": "0050.TW" },
+    { "id": "NDQ", "label": "NDQ", "yahoo": "^NDX" },
+    { "id": "SOX", "label": "SOX", "yahoo": "^SOX" },
+    { "id": "BTC", "label": "BTC", "coingecko": "bitcoin", "prefix": "$" },
+    { "id": "ETH", "label": "ETH", "coingecko": "ethereum", "prefix": "$" }
+  ]
+}
