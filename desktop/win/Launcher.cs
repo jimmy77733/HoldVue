@@ -540,6 +540,19 @@ namespace HoldVue
             }
         }
 
+        void PushPrefs()
+        {
+            try
+            {
+                int opacityPct = (int)Math.Round(_opacity * 100);
+                string json = "{\"topMost\":" + (_topMost ? "true" : "false")
+                    + ",\"clickThrough\":" + (_clickThrough ? "true" : "false")
+                    + ",\"opacity\":" + opacityPct + "}";
+                EvalJs("holdvuePrefs(" + json + ")");
+            }
+            catch { }
+        }
+
         void ApplySize(int w, int h)
         {
             WindowState = FormWindowState.Normal;
@@ -625,17 +638,35 @@ namespace HoldVue
                 else if (cmd == "chrome")
                 {
                     SetChrome(ReadBool(raw, "on", false));
-                    if (!_chrome) ApplySize(300, 78);
+                    // 尺寸交由前端依模式重算，避免固定 300x78 蓋掉最佳尺寸
                 }
                 else if (cmd == "topmost")
                 {
-                    _topMost = !_topMost;
+                    if (raw.IndexOf("\"on\"", StringComparison.OrdinalIgnoreCase) >= 0)
+                        _topMost = ReadBool(raw, "on", _topMost);
+                    else
+                        _topMost = !_topMost;
                     TopMost = _topMost;
+                    if (_pinItem != null) _pinItem.Checked = _topMost;
                     SaveBounds();
+                    PushPrefs();
                 }
                 else if (cmd == "clickthrough")
                 {
-                    SetClickThrough(!_clickThrough);
+                    if (raw.IndexOf("\"on\"", StringComparison.OrdinalIgnoreCase) >= 0)
+                        SetClickThrough(ReadBool(raw, "on", _clickThrough));
+                    else
+                        SetClickThrough(!_clickThrough);
+                    PushPrefs();
+                }
+                else if (cmd == "opacity")
+                {
+                    ApplyOpacity(ReadInt(raw, "pct", 100) / 100.0);
+                    PushPrefs();
+                }
+                else if (cmd == "prefs")
+                {
+                    PushPrefs();
                 }
                 else if (cmd == "resizeStart")
                 {

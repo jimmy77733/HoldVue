@@ -335,7 +335,26 @@ ipcMain.on('holdvue-chrome', (_e, fullMode) => {
   if (fullMode && clickThrough) applyClickThrough(false);
 });
 ipcMain.on('holdvue-hide', () => { saveSettings(); mainWindow?.hide(); });
-ipcMain.on('holdvue-clickthrough', () => applyClickThrough(!clickThrough));
+ipcMain.on('holdvue-clickthrough', (_e, on) => {
+  if (typeof on === 'boolean') applyClickThrough(on);
+  else applyClickThrough(!clickThrough);
+});
+ipcMain.on('holdvue-topmost', (_e, on) => {
+  topMost = typeof on === 'boolean' ? on : !topMost;
+  mainWindow?.setAlwaysOnTop(topMost);
+  saveSettings();
+});
+ipcMain.on('holdvue-opacity', (_e, pct) => {
+  const n = Number(pct);
+  opacity = Math.min(1, Math.max(0.35, (Number.isFinite(n) ? n : 100) / 100));
+  if (mainWindow) mainWindow.setOpacity(opacity);
+  saveSettings();
+});
+ipcMain.handle('holdvue-get-prefs', () => ({
+  topMost,
+  clickThrough,
+  opacity: Math.round(opacity * 100)
+}));
 
 app.whenReady().then(async () => {
   await ensureService();

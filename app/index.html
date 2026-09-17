@@ -108,11 +108,12 @@ html.lowcontrast .mini-cell .sess.h24{
   line-height:1.25;
 }
 .mini[data-mode="stock"] .mini-grid{
-  /* 填滿視窗高度，內容超出時可滾輪捲動（不顯示捲軸） */
-  flex:1 1 auto;
+  /* 高度貼齊內容；視窗較矮時才內部滾輪 */
+  flex:0 1 auto;
   align-self:stretch;
   min-height:0;
-  width:100%;
+  max-height:100%;
+  width:max-content;
   max-width:100%;
   box-sizing:border-box;
   grid-template-columns:max-content;
@@ -126,6 +127,13 @@ html.lowcontrast .mini-cell .sess.h24{
   row-gap:3px;
   scrollbar-width:none;
   -ms-overflow-style:none;
+}
+.mini[data-mode="stock"]{
+  justify-content:flex-start;
+}
+.mini[data-mode="stock"] .mini-tabs{
+  width:100%;
+  align-self:stretch;
 }
 .mini[data-mode="stock"] .mini-grid::-webkit-scrollbar{
   width:0 !important;
@@ -155,6 +163,26 @@ html.lowcontrast .mini-cell .sess.h24{
   transition:opacity .25s;
 }
 .mini.show-hint .mini-hint{opacity:.8}
+.mini-tabs{
+  display:none;
+  flex:0 0 auto;
+  gap:0;
+  border-top:1px solid var(--line);
+  background:rgba(0,0,0,.04);
+  padding:0;
+  min-height:22px;
+}
+html[data-theme="dark"] .mini-tabs{background:rgba(255,255,255,.04)}
+.mini[data-mode="stock"] .mini-tabs{display:flex}
+.mini-tabs button{
+  flex:1; border:0; background:transparent; color:var(--muted);
+  font:inherit; font-size:10px; font-weight:600; letter-spacing:.02em;
+  padding:4px 2px; cursor:pointer; line-height:1.2;
+  border-right:1px solid var(--line);
+}
+.mini-tabs button:last-child{border-right:0}
+.mini-tabs button.active{color:var(--text); background:var(--fill)}
+.mini-tabs button:hover{color:var(--text)}
 
 /* Context menu */
 .ctx{
@@ -194,6 +222,35 @@ html.widget.fullmode .full .hero:active{cursor:grabbing}
   padding:6px 12px; border-radius:980px; cursor:pointer}
 .full .tabs button.active{background:var(--card); color:var(--text)}
 .board{display:grid; grid-template-columns:repeat(auto-fill,minmax(120px,1fr)); gap:8px}
+.board-group{margin-bottom:14px}
+.board-group:last-child{margin-bottom:0}
+.board-group h3{
+  margin:0 0 8px; font-size:.78rem; font-weight:600; color:var(--muted);
+  letter-spacing:.04em; text-transform:none;
+}
+.settings .cat-panel{margin:10px 0 14px; padding:10px; border:1px solid var(--line); border-radius:10px; background:var(--fill)}
+.settings .cat-panel h3{margin:0 0 8px; font-size:.85rem}
+.settings .cat-row{display:flex; gap:6px; align-items:center; margin-top:6px}
+.settings .cat-row input{flex:1; min-width:80px}
+.settings .section-title{margin:12px 0 4px; font-size:.85rem}
+.settings select.cat-select{min-width:72px; flex:0 0 auto}
+.settings tr.cat-head td{
+  padding:10px 6px 6px; font-size:.78rem; font-weight:700; color:var(--muted);
+  border-bottom:1px solid var(--line); background:transparent; letter-spacing:.04em;
+}
+.settings .autofill-hint{margin-top:6px; font-size:.75rem; color:var(--muted); min-height:1.1em}
+.settings .autofill-hint.hit{color:var(--ok)}
+.disp-grid{display:flex; flex-direction:column; gap:10px; margin-top:8px}
+.disp-item{
+  display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px;
+  padding:10px 12px; border:1px solid var(--line); border-radius:10px; background:var(--fill);
+}
+.disp-label{font-size:.85rem; font-weight:600; color:var(--text)}
+.disp-actions{display:flex; flex-wrap:wrap; gap:6px}
+.disp-switch{font-size:.82rem; color:var(--muted); display:flex; align-items:center; gap:6px; cursor:pointer}
+.disp-item select{min-width:96px; border:1px solid var(--line); background:var(--bg);
+  color:var(--text); border-radius:8px; padding:7px 9px; font:inherit; font-size:.8rem}
+.disp-actions button.active{background:var(--accent); color:#fff; border-color:var(--accent)}
 .card{background:var(--card); border:1px solid var(--line); border-radius:12px; padding:12px}
 .card .label{color:var(--muted); font-size:.75rem}
 .card .price{margin-top:6px; font-size:1.25rem; font-weight:600; font-variant-numeric:tabular-nums}
@@ -281,6 +338,7 @@ html:not(.widget) .resize-handle{display:none !important}
   <div class="mini" id="mini" data-mode="sys">
     <span class="mini-lock" title="已鎖定"></span>
     <div class="mini-grid" id="miniGrid"></div>
+    <div class="mini-tabs" id="miniTabs"></div>
     <div class="mini-hint" id="miniHint"></div>
   </div>
 
@@ -296,13 +354,14 @@ html:not(.widget) .resize-handle{display:none !important}
     <nav class="tabs">
       <button class="active" type="button" data-tab="board">觀測看板</button>
       <button type="button" data-tab="settings">標的設定</button>
+      <button type="button" data-tab="display">顯示設定</button>
     </nav>
     <section id="tab-board">
       <div class="sys">
         <div class="card"><div class="label">CPU</div><div class="price" id="cpu">--%</div></div>
         <div class="card"><div class="label">記憶體</div><div class="price" id="ram">--%</div></div>
       </div>
-      <div class="board" id="board"></div>
+      <div id="boardWrap"></div>
     </section>
     <section id="tab-settings" class="settings hidden">
       <div class="card">
@@ -312,21 +371,91 @@ html:not(.widget) .resize-handle{display:none !important}
           <button class="btn-secondary" type="button" onclick="refreshAll()">重新整理</button>
           <button class="btn-secondary" type="button" onclick="exitFullMode()">返回極簡</button>
         </div>
-        <table><thead><tr><th>#</th><th>名稱</th><th>來源</th><th>代碼</th><th></th></tr></thead><tbody id="tbody"></tbody></table>
-        <div class="row"><strong style="font-size:.85rem">新增標的</strong></div>
+        <div class="section-title"><strong>新增標的</strong></div>
         <div class="row">
-          <label>名稱</label><input id="newLabel" placeholder="0050"/>
+          <label>名稱</label><input id="newLabel" placeholder="0050" autocomplete="off"/>
           <label>來源</label>
           <select id="newSource"><option value="yahoo">Yahoo</option><option value="coingecko">CoinGecko</option></select>
+          <label>分類</label>
+          <select id="newCategory" class="cat-select"></select>
         </div>
         <div class="row">
-          <label>代碼</label><input id="newCode" placeholder="0050.TW"/>
+          <label>代碼</label><input id="newCode" placeholder="0050.TW" autocomplete="off"/>
           <label>前綴</label><input id="newPrefix" placeholder="$" style="max-width:64px"/>
           <button class="btn-primary" type="button" onclick="addSymbol()">加入</button>
           <button class="btn-secondary" type="button" onclick="testNew()">驗證</button>
         </div>
+        <div class="autofill-hint" id="autofillHint">輸入名稱或代碼後稍候，會自動帶入對應欄位</div>
         <div class="toast" id="toast"></div>
         <div class="toast" id="testResult"></div>
+
+        <div class="cat-panel">
+          <h3>分類分頁（股票模式底部 TAB）</h3>
+          <div id="catList"></div>
+          <div class="cat-row">
+            <input id="newCatName" placeholder="新分類名稱，例如 TW"/>
+            <button class="btn-primary" type="button" onclick="addCategory()">新增分類</button>
+          </div>
+        </div>
+
+        <div class="section-title"><strong>標的列表</strong></div>
+        <table><thead><tr><th>#</th><th>名稱</th><th>分類</th><th>來源</th><th>代碼</th><th></th></tr></thead><tbody id="tbody"></tbody></table>
+      </div>
+    </section>
+    <section id="tab-display" class="settings hidden">
+      <div class="card">
+        <div class="toolbar">
+          <button class="btn-secondary" type="button" onclick="exitFullMode()">返回極簡</button>
+        </div>
+        <div class="section-title"><strong>極簡模式顯示</strong></div>
+        <div class="disp-grid">
+          <div class="disp-item">
+            <span class="disp-label">預設顯示</span>
+            <div class="disp-actions">
+              <button type="button" class="btn-secondary" id="dispModeSys" onclick="applyDisplayMode('sys')">系統列</button>
+              <button type="button" class="btn-secondary" id="dispModeStock" onclick="applyDisplayMode('stock')">股票列</button>
+            </div>
+          </div>
+          <div class="disp-item">
+            <span class="disp-label">主題</span>
+            <div class="disp-actions">
+              <button type="button" class="btn-secondary" id="dispThemeLight" onclick="setTheme('light'); syncDisplayUi();">淺色</button>
+              <button type="button" class="btn-secondary" id="dispThemeDark" onclick="setTheme('dark'); syncDisplayUi();">深色</button>
+            </div>
+          </div>
+          <div class="disp-item">
+            <span class="disp-label">永遠置頂</span>
+            <label class="disp-switch"><input type="checkbox" id="dispTopmost" onchange="setTopmost(this.checked)"/> 啟用</label>
+          </div>
+          <div class="disp-item">
+            <span class="disp-label">左鍵穿透</span>
+            <label class="disp-switch"><input type="checkbox" id="dispClickThrough" onchange="setClickThrough(this.checked)"/> 啟用</label>
+          </div>
+          <div class="disp-item">
+            <span class="disp-label">低對比</span>
+            <label class="disp-switch"><input type="checkbox" id="dispLowContrast" onchange="setLowContrast(this.checked); syncDisplayUi();"/> 啟用</label>
+          </div>
+          <div class="disp-item">
+            <span class="disp-label">透明度</span>
+            <select id="dispOpacity" onchange="setOpacityPct(Number(this.value))">
+              <option value="100">100%</option>
+              <option value="90">90%</option>
+              <option value="80">80%</option>
+              <option value="70">70%</option>
+              <option value="60">60%</option>
+              <option value="50">50%</option>
+              <option value="40">40%</option>
+            </select>
+          </div>
+          <div class="disp-item">
+            <span class="disp-label">尺寸重設</span>
+            <div class="disp-actions">
+              <button type="button" class="btn-secondary" onclick="holdvueMenu('size-sys')">系統列最佳尺寸</button>
+              <button type="button" class="btn-secondary" onclick="holdvueMenu('size-stock')">股票列最佳尺寸</button>
+            </div>
+          </div>
+        </div>
+        <div class="toast" id="dispToast"></div>
       </div>
     </section>
   </div>
@@ -366,25 +495,96 @@ if(isWidget) root.classList.add('widget');
 const savedTheme=localStorage.getItem('holdvue-theme') || (matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');
 root.setAttribute('data-theme', savedTheme);
 
-let cfg={symbols:[]};
+let cfg={symbols:[], categories:['TW','US','Coin']};
 let quotes={};
 let selected=-1;
 let viewMode=localStorage.getItem('holdvue-view') || 'sys'; // sys | stock
+let stockTab=localStorage.getItem('holdvue-stock-tab') || '';
 let locked=localStorage.getItem('holdvue-lock')==='1';
 let lowContrast=localStorage.getItem('holdvue-lowcontrast')==='1';
 let clickTimes=[];
 let sizeFitDone=false;
 const TRIPLE_MS=650;
+const DEFAULT_CATEGORIES=['TW','US','Coin'];
 /** 系統／股票各自記住視窗尺寸，互不覆蓋 */
 let modeSizes=(()=>{
   try{ return JSON.parse(localStorage.getItem('holdvue-mode-sizes')||'{}')||{}; }
   catch{ return {}; }
 })();
-// 清掉偏高的系統尺寸，改回貼齊內容
+// 清掉偏高的系統／股票尺寸，改回貼齊內容
 if(modeSizes.sys && modeSizes.sys.h>72) delete modeSizes.sys;
+if(modeSizes.stock && modeSizes.stock.h>420) delete modeSizes.stock;
 if(lowContrast) root.classList.add('lowcontrast');
 
 function currentMode(){ return locked?'sys':viewMode; }
+
+function inferCategory(s, cats){
+  const list=cats&&cats.length?cats:DEFAULT_CATEGORIES;
+  const prefer=s&&s.coingecko?'Coin':(marketKind(s)==='tw'?'TW':'US');
+  if(list.includes(prefer)) return prefer;
+  return list[0];
+}
+
+function ensureCategories(data){
+  const next=data&&typeof data==='object'?data:{symbols:[]};
+  if(!Array.isArray(next.categories) || !next.categories.length){
+    next.categories=DEFAULT_CATEGORIES.slice();
+  }else{
+    next.categories=next.categories.map(c=>String(c||'').trim()).filter(Boolean);
+    if(!next.categories.length) next.categories=DEFAULT_CATEGORIES.slice();
+  }
+  // 去重並保留順序
+  const seen=new Set();
+  next.categories=next.categories.filter(c=>{
+    if(seen.has(c)) return false;
+    seen.add(c); return true;
+  });
+  next.symbols=(next.symbols||[]).map(s=>{
+    if(!s || typeof s!=='object') return s;
+    if(!s.category || !next.categories.includes(s.category)){
+      s.category=inferCategory(s, next.categories);
+    }
+    return s;
+  });
+  return next;
+}
+
+function categories(){
+  return (cfg.categories&&cfg.categories.length)?cfg.categories:DEFAULT_CATEGORIES.slice();
+}
+
+function activeStockTab(){
+  const cats=categories();
+  if(stockTab && cats.includes(stockTab)) return stockTab;
+  return cats[0]||'TW';
+}
+
+function setStockTab(name){
+  const cats=categories();
+  if(!cats.includes(name)) return;
+  stockTab=name;
+  localStorage.setItem('holdvue-stock-tab', stockTab);
+  sizeFitDone=false;
+  delete modeSizes.stock;
+  renderMini();
+  if(isWidget && !root.classList.contains('fullmode') && currentMode()==='stock'){
+    resizeForMode(true);
+  }
+}
+
+function symbolsInCategory(cat){
+  const c=cat||activeStockTab();
+  return (cfg.symbols||[]).filter(s=>s.category===c);
+}
+
+function symbolsGrouped(){
+  const cats=categories();
+  const groups=cats.map(cat=>({cat, items:symbolsInCategory(cat)}));
+  const known=new Set(cats);
+  const orphan=(cfg.symbols||[]).filter(s=>!known.has(s.category));
+  if(orphan.length) groups.push({cat:'其他', items:orphan});
+  return groups;
+}
 
 function persistModeSize(mode, w, h){
   if(!mode||!(w>0)||!(h>0)) return;
@@ -411,7 +611,10 @@ function post(msg){
       if(m.cmd==='resize') return holdvueDesktop.resize(m.w, m.h, !!m.chrome);
       if(m.cmd==='chrome') return holdvueDesktop.chrome(!!m.on);
       if(m.cmd==='hide') return holdvueDesktop.hide();
-      if(m.cmd==='clickthrough') return holdvueDesktop.clickThrough && holdvueDesktop.clickThrough();
+      if(m.cmd==='topmost') return holdvueDesktop.topmost && holdvueDesktop.topmost(m.on);
+      if(m.cmd==='clickthrough') return holdvueDesktop.clickThrough && holdvueDesktop.clickThrough(m.on);
+      if(m.cmd==='opacity') return holdvueDesktop.opacity && holdvueDesktop.opacity(m.pct);
+      if(m.cmd==='prefs') return holdvueDesktop.getPrefs && holdvueDesktop.getPrefs().then(p=>holdvuePrefs(p));
       if(m.cmd==='exit') return;
     }
     if(window.chrome && chrome.webview && chrome.webview.postMessage)
@@ -534,30 +737,42 @@ function measureMiniGridSize(cols, opts){
   };
 }
 
-/** 縮放後若寬度仍裁切文字則補寬；高度不強制拉高（股票模式改以滾輪檢視） */
+/** 縮放後若仍裁切則補寬／貼齊高度 */
 function ensureMiniNoClip(baseW, baseH){
   const mode=currentMode();
-  const cols=mode==='sys'?2:(document.getElementById('mini').classList.contains('cols-2')?2:1);
-  const need=measureMiniGridSize(cols);
-  if(need.w>baseW+1){
-    const h=mode==='sys'?need.h:baseH;
-    post({cmd:'resize', w:need.w, h});
-    persistModeSize(mode, need.w, h);
-  }else if(mode==='sys' && Math.abs(need.h-baseH)>1){
-    post({cmd:'resize', w:baseW, h:need.h});
-    persistModeSize('sys', baseW, need.h);
+  if(mode==='stock'){
+    const fit=fitStockWindowSize(document.getElementById('mini').classList.contains('cols-2'));
+    const w=Math.max(baseW, fit.w);
+    const h=fit.h; // 股票模式一律貼齊內容，避免列表與 TAB 間大片空白
+    if(Math.abs(w-baseW)>1 || Math.abs(h-baseH)>1){
+      post({cmd:'resize', w, h});
+      persistModeSize('stock', w, h);
+    }
+    return;
+  }
+  const cols=2;
+  const need=measureMiniGridSize(cols, {tight:true});
+  if(need.w>baseW+1 || Math.abs(need.h-baseH)>1){
+    post({cmd:'resize', w:Math.max(baseW, need.w), h:need.h});
+    persistModeSize('sys', Math.max(baseW, need.w), need.h);
   }
 }
 
-/** 股票模式：依內容決定兩欄並回傳貼齊文字的視窗尺寸 */
+/** 股票模式：寬高皆依目前分類內容貼齊（TAB 寬度跟隨內容寬，不回讀視窗寬） */
 function fitStockWindowSize(preferTwo){
   const mini=document.getElementById('mini');
-  const n=Math.max(1, (cfg.symbols||[]).length);
+  const n=Math.max(1, symbolsInCategory().length);
   const useTwo=preferTwo!==false && n>=2;
   mini.classList.toggle('cols-2', useTwo);
   void mini.offsetWidth;
-  const {w,h}=measureMiniGridSize(useTwo?2:1);
-  return {w, h:Math.min(420, Math.max(80, h)), useTwo};
+  const {w,h}=measureMiniGridSize(useTwo?2:1, {tight:true});
+  const tabs=document.getElementById('miniTabs');
+  let tabsH=22;
+  if(tabs && getComputedStyle(tabs).display!=='none'){
+    tabsH=Math.max(22, Math.ceil(tabs.getBoundingClientRect().height||22));
+  }
+  // 寬度只看標的列，避免 TAB flex 被大視窗撐開後污染量測
+  return {w:Math.max(w, 132), h:Math.min(420, Math.max(64, h+tabsH)), useTwo};
 }
 
 /** 系統監控：永遠貼齊內容，不受股票模式高寬影響 */
@@ -568,7 +783,6 @@ function fitSysWindowSize(){
   mini.dataset.mode='sys';
   void mini.offsetWidth;
   const measured=measureMiniGridSize(2, {tight:true});
-  // 以實際排版盒高為準，取較小值避免底部多餘空白
   const laid=Math.ceil(grid.getBoundingClientRect().height)+3;
   return {w:measured.w, h:Math.max(40, Math.min(measured.h, laid))};
 }
@@ -578,26 +792,23 @@ function syncStockColsToWidth(snap){
   if(!isWidget || root.classList.contains('fullmode')) return;
   if(currentMode()!=='stock') return;
   const mini=document.getElementById('mini');
-  const n=(cfg.symbols||[]).length;
+  const n=symbolsInCategory().length;
   if(n<2){ mini.classList.remove('cols-2'); return; }
   const wasTwo=mini.classList.contains('cols-2');
-  const twoSize=(()=>{ mini.classList.add('cols-2'); void mini.offsetWidth; return measureMiniGridSize(2); })();
+  const twoSize=(()=>{ mini.classList.add('cols-2'); void mini.offsetWidth; return measureMiniGridSize(2, {tight:true}); })();
   const keep=window.innerWidth>=(wasTwo?twoSize.w-8:twoSize.w);
   mini.classList.toggle('cols-2', keep);
   if(snap){
-    if(wasTwo && !keep){
-      const {w}=measureMiniGridSize(1);
-      post({cmd:'resize', w, h:window.innerHeight});
-      persistModeSize('stock', w, window.innerHeight);
-    }else{
-      rememberCurrentWindow('stock');
-    }
+    // 欄數變更後重新貼齊內容（含高度）
+    const fit=fitStockWindowSize(keep);
+    post({cmd:'resize', w:fit.w, h:fit.h});
+    persistModeSize('stock', fit.w, fit.h);
   }
 }
 
 /**
  * 套用目前模式自己的視窗尺寸（與另一模式隔離）。
- * @param {boolean} force 強制依內容重新量測
+ * @param {boolean} force 強制依內容重新量測（寬高都貼齊）
  */
 function resizeForMode(force){
   if(!isWidget || root.classList.contains('fullmode')) return;
@@ -607,15 +818,26 @@ function resizeForMode(force){
     let w, h;
     const saved=modeSizes[mode];
     if(mode==='stock'){
-      // 進入股票模式：寬度一律貼齊內容；高度可沿用上次（方便滾輪檢視）
       const mini=document.getElementById('mini');
       mini.classList.remove('cols-2');
       void mini.offsetWidth;
-      const oneW=measureMiniGridSize(1).w;
-      const preferTwo=!!(saved && saved.w>=oneW*2-24 && (cfg.symbols||[]).length>=2);
+      const oneW=measureMiniGridSize(1, {tight:true}).w;
+      // 僅在非強制、且先前寬度明顯夠雙欄時維持雙欄
+      const preferTwo=!force && !!(saved && saved.w>=oneW*2-24 && symbolsInCategory().length>=2);
       const fit=fitStockWindowSize(preferTwo);
       w=fit.w;
-      h=(saved && saved.h>=64)?saved.h:fit.h;
+      // force：寬高都貼齊內容；否則寬度仍貼齊，高度可保留手動放大（但不小於內容）
+      if(force){
+        h=fit.h;
+      }else if(saved && saved.h>=fit.h && saved.h<=fit.h+48){
+        // 接近內容的微調高度可保留
+        h=saved.h;
+      }else if(saved && saved.h>fit.h+48){
+        // 明顯過高的舊尺寸（例如完整介面殘留）一律收回
+        h=fit.h;
+      }else{
+        h=fit.h;
+      }
       persistModeSize('stock', w, h);
     }else if(!force && saved && saved.w>=120 && saved.h>=40 && saved.h<=72){
       fitSysWindowSize();
@@ -626,17 +848,37 @@ function resizeForMode(force){
     }
     post({cmd:'resize', w, h});
     sizeFitDone=true;
-    if(mode==='sys'){
-      requestAnimationFrame(()=>{
+    requestAnimationFrame(()=>{
+      if(mode==='sys'){
         const again=fitSysWindowSize();
         post({cmd:'resize', w:again.w, h:again.h});
         persistModeSize('sys', again.w, again.h);
-      });
-    }else{
-      requestAnimationFrame(()=>requestAnimationFrame(()=>ensureMiniNoClip(w, h)));
-    }
+      }else{
+        ensureMiniNoClip(w, h);
+      }
+    });
   };
   requestAnimationFrame(()=>requestAnimationFrame(apply));
+}
+
+function renderMiniTabs(){
+  const el=document.getElementById('miniTabs');
+  if(!el) return;
+  const cats=categories();
+  const active=activeStockTab();
+  el.innerHTML='';
+  cats.forEach(cat=>{
+    const btn=document.createElement('button');
+    btn.type='button';
+    btn.textContent=cat;
+    if(cat===active) btn.classList.add('active');
+    btn.addEventListener('click', e=>{
+      e.preventDefault();
+      e.stopPropagation();
+      setStockTab(cat);
+    });
+    el.appendChild(btn);
+  });
 }
 
 function renderMini(){
@@ -661,16 +903,23 @@ function renderMini(){
     cell('CPU:', (quotes.CPU ?? quotes.cpu ?? '--')+' %');
     cell('記憶體:', (quotes.RAM ?? quotes.ram ?? '--')+' %');
   }else{
-    cfg.symbols.forEach(s=>{
-      const q=quoteDetail(s.id);
-      const pct=fmtPct(q.changePercent);
-      const sess=q.session||'休市';
-      const mkt=marketKind(s);
-      const extra=`<span class="chg ${pct.cls}">${pct.text}</span><span class="sess ${sessClass(sess)}">${sess}</span>`;
-      cell((s.label||s.id)+':', fmt(q.price, s.prefix||''), extra, mkt);
-    });
+    renderMiniTabs();
+    const list=symbolsInCategory();
+    if(!list.length){
+      cell('（空）', activeStockTab());
+    }else{
+      list.forEach(s=>{
+        const q=quoteDetail(s.id);
+        const pct=fmtPct(q.changePercent);
+        const sess=q.session||'休市';
+        const mkt=marketKind(s);
+        const extra=`<span class="chg ${pct.cls}">${pct.text}</span><span class="sess ${sessClass(sess)}">${sess}</span>`;
+        cell((s.label||s.id)+':', fmt(q.price, s.prefix||''), extra, mkt);
+      });
+    }
   }
   applyLockUi();
+  syncDisplayUi();
 }
 
 function flashHint(text){
@@ -895,15 +1144,27 @@ document.getElementById('ctx').addEventListener('click', e=>{
 });
 
 function enterFullMode(){
+  // 進入完整介面前先記住目前極簡尺寸（但返回時仍會重算最佳尺寸）
+  if(!root.classList.contains('fullmode')) rememberCurrentWindow(currentMode());
   root.classList.add('fullmode');
   post({cmd:'resize', w:420, h:640, chrome:true});
+  requestPrefs();
+  syncDisplayUi();
 }
 function exitFullMode(){
   root.classList.remove('fullmode');
-  sizeFitDone=false;
-  renderMini();
-  resizeForMode(true);
   post({cmd:'chrome', on:false});
+  sizeFitDone=false;
+  // 清除兩種模式的過大殘留，返回後強制依內容重算寬高
+  delete modeSizes.sys;
+  delete modeSizes.stock;
+  try{ localStorage.setItem('holdvue-mode-sizes', JSON.stringify(modeSizes)); }catch{}
+  renderMini();
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{
+    resizeForMode(true);
+    // 再校正一次，避免 chrome 切換當幀量測偏大
+    requestAnimationFrame(()=>resizeForMode(true));
+  }));
 }
 
 /* Full dashboard */
@@ -914,55 +1175,266 @@ document.querySelectorAll('.full .tabs button').forEach(btn=>{
     const tab=btn.dataset.tab;
     document.getElementById('tab-board').classList.toggle('hidden', tab!=='board');
     document.getElementById('tab-settings').classList.toggle('hidden', tab!=='settings');
+    document.getElementById('tab-display').classList.toggle('hidden', tab!=='display');
+    if(tab==='display'){ requestPrefs(); syncDisplayUi(); }
+    if(tab==='settings'){ renderCatList(); fillCategorySelects(); }
   };
 });
 
 function toast(msg,ok){const el=document.getElementById('toast'); el.textContent=msg; el.className='toast '+(ok?'ok':'');}
 function testToast(msg,ok){const el=document.getElementById('testResult'); el.textContent=msg; el.className='toast '+(ok?'ok':'bad');}
+function dispToast(msg,ok){const el=document.getElementById('dispToast'); if(!el) return; el.textContent=msg; el.className='toast '+(ok?'ok':'');}
+
+let widgetPrefs={topMost:true, clickThrough:false, opacity:100};
+window.holdvuePrefs=function(p){
+  if(!p || typeof p!=='object') return;
+  if(typeof p.topMost==='boolean') widgetPrefs.topMost=p.topMost;
+  if(typeof p.clickThrough==='boolean') widgetPrefs.clickThrough=p.clickThrough;
+  if(typeof p.opacity==='number') widgetPrefs.opacity=p.opacity>1?Math.round(p.opacity):Math.round(p.opacity*100);
+  syncDisplayUi();
+};
+function requestPrefs(){ post({cmd:'prefs'}); }
+function setTopmost(on){
+  widgetPrefs.topMost=!!on;
+  post({cmd:'topmost', on:widgetPrefs.topMost});
+  syncDisplayUi();
+}
+function setClickThrough(on){
+  widgetPrefs.clickThrough=!!on;
+  post({cmd:'clickthrough', on:widgetPrefs.clickThrough});
+  syncDisplayUi();
+}
+function setOpacityPct(pct){
+  const n=Math.max(40, Math.min(100, Number(pct)||100));
+  widgetPrefs.opacity=n;
+  post({cmd:'opacity', pct:n});
+  syncDisplayUi();
+}
+function applyDisplayMode(mode){
+  if(mode==='stock'){
+    if(locked){ dispToast('已鎖定為系統監控', false); return; }
+    viewMode='stock';
+    localStorage.setItem('holdvue-view','stock');
+  }else{
+    viewMode='sys';
+    localStorage.setItem('holdvue-view','sys');
+  }
+  sizeFitDone=false;
+  delete modeSizes[mode];
+  renderMini();
+  syncDisplayUi();
+  dispToast(mode==='stock'?'已切換為股票列':'已切換為系統列', true);
+}
+function syncDisplayUi(){
+  const theme=root.getAttribute('data-theme');
+  const mode=locked?'sys':viewMode;
+  const sysBtn=document.getElementById('dispModeSys');
+  const stockBtn=document.getElementById('dispModeStock');
+  if(sysBtn) sysBtn.classList.toggle('active', mode==='sys');
+  if(stockBtn) stockBtn.classList.toggle('active', mode==='stock');
+  const light=document.getElementById('dispThemeLight');
+  const dark=document.getElementById('dispThemeDark');
+  if(light) light.classList.toggle('active', theme==='light');
+  if(dark) dark.classList.toggle('active', theme==='dark');
+  const top=document.getElementById('dispTopmost');
+  if(top) top.checked=!!widgetPrefs.topMost;
+  const ct=document.getElementById('dispClickThrough');
+  if(ct) ct.checked=!!widgetPrefs.clickThrough;
+  const lc=document.getElementById('dispLowContrast');
+  if(lc) lc.checked=!!lowContrast;
+  const op=document.getElementById('dispOpacity');
+  if(op){
+    const nearest=[100,90,80,70,60,50,40].reduce((a,b)=>Math.abs(b-widgetPrefs.opacity)<Math.abs(a-widgetPrefs.opacity)?b:a,100);
+    op.value=String(nearest);
+  }
+}
+
+function fillCategorySelects(){
+  const cats=categories();
+  const sel=document.getElementById('newCategory');
+  if(!sel) return;
+  const cur=sel.value;
+  sel.innerHTML=cats.map(c=>`<option value="${c}">${c}</option>`).join('');
+  if(cats.includes(cur)) sel.value=cur;
+  else if(cats.length) sel.value=cats[0];
+}
+
+function renderCatList(){
+  const box=document.getElementById('catList');
+  if(!box) return;
+  const cats=categories();
+  box.innerHTML='';
+  cats.forEach((cat,i)=>{
+    const row=document.createElement('div');
+    row.className='cat-row';
+    row.innerHTML=`<span class="ord"><span class="ord-btns"><button type="button" data-cmove="-1" title="上移" ${i===0?'disabled':''}>▲</button><button type="button" data-cmove="1" title="下移" ${i===cats.length-1?'disabled':''}>▼</button></span></span>
+      <input data-cat-name value="${cat.replace(/"/g,'&quot;')}" />
+      <button class="btn-secondary" type="button" data-cat-save>重新命名</button>
+      <button class="btn-danger" type="button" data-cat-del ${cats.length<=1?'disabled':''}>刪除</button>`;
+    row.querySelectorAll('[data-cmove]').forEach(btn=>{
+      btn.onclick=()=>moveCategory(i, Number(btn.dataset.cmove));
+    });
+    row.querySelector('[data-cat-save]').onclick=()=>{
+      const name=row.querySelector('[data-cat-name]').value.trim();
+      renameCategory(i, name);
+    };
+    row.querySelector('[data-cat-del]').onclick=()=>removeCategory(i);
+    box.appendChild(row);
+  });
+  fillCategorySelects();
+}
+
+function moveCategory(i, dir){
+  const cats=categories();
+  const j=i+dir;
+  if(j<0||j>=cats.length) return;
+  const t=cats[i]; cats[i]=cats[j]; cats[j]=t;
+  cfg.categories=cats;
+  if(stockTab===t || stockTab===cats[i]){ /* keep */ }
+  renderCatList(); renderTable(); renderBoard();
+}
+
+function renameCategory(i, name){
+  const cats=categories();
+  const old=cats[i];
+  const next=String(name||'').trim();
+  if(!next){ toast('分類名稱不可空白', false); return; }
+  if(cats.some((c,idx)=>idx!==i && c===next)){ toast('分類名稱重複', false); return; }
+  cats[i]=next;
+  cfg.categories=cats;
+  (cfg.symbols||[]).forEach(s=>{ if(s.category===old) s.category=next; });
+  if(stockTab===old){ stockTab=next; localStorage.setItem('holdvue-stock-tab', stockTab); }
+  renderCatList(); renderTable(); renderBoard();
+  toast('分類已重新命名（記得儲存）', true);
+}
+
+function removeCategory(i){
+  const cats=categories();
+  if(cats.length<=1){ toast('至少保留一個分類', false); return; }
+  const removed=cats[i];
+  cats.splice(i,1);
+  cfg.categories=cats;
+  const fallback=cats[0];
+  (cfg.symbols||[]).forEach(s=>{ if(s.category===removed) s.category=fallback; });
+  if(stockTab===removed){ stockTab=fallback; localStorage.setItem('holdvue-stock-tab', stockTab); }
+  renderCatList(); renderTable(); renderBoard();
+  toast('已刪除分類（記得儲存）', true);
+}
+
+function addCategory(){
+  const input=document.getElementById('newCatName');
+  const name=String(input&&input.value||'').trim();
+  if(!name){ toast('請輸入分類名稱', false); return; }
+  const cats=categories();
+  if(cats.includes(name)){ toast('分類已存在', false); return; }
+  cats.push(name);
+  cfg.categories=cats;
+  if(input) input.value='';
+  renderCatList(); renderTable(); renderBoard();
+  toast('已新增分類（記得儲存）', true);
+}
+
+function reorderSymbolsByCategory(){
+  const cats=categories();
+  const known=new Set(cats);
+  const buckets=Object.fromEntries(cats.map(c=>[c,[]]));
+  const orphan=[];
+  (cfg.symbols||[]).forEach(s=>{
+    if(s.category && buckets[s.category]) buckets[s.category].push(s);
+    else if(s.category && known.has(s.category)) buckets[s.category].push(s);
+    else orphan.push(s);
+  });
+  cfg.symbols=cats.flatMap(c=>buckets[c]||[]).concat(orphan);
+}
 
 function renderBoard(){
   document.getElementById('cpu').textContent=(quotes.CPU??'--')+'%';
   document.getElementById('ram').textContent=(quotes.RAM??'--')+'%';
   document.getElementById('updatedFull').textContent='更新 '+(quotes.updated||'--');
-  const board=document.getElementById('board'); board.innerHTML='';
-  cfg.symbols.forEach(s=>{
-    const tile=document.createElement('div'); tile.className='card'+(marketKind(s)==='tw'?' mkt-tw':'');
-    const src=s.coingecko?'CoinGecko':'Yahoo';
-    const code=s.coingecko||s.yahoo||'';
-    const q=quoteDetail(s.id);
-    const pct=fmtPct(q.changePercent);
-    const sess=q.session||'休市';
-    tile.innerHTML=`<div class="label">${s.label||s.id}</div><div class="price">${fmt(q.price, s.prefix||'')}</div><div class="meta"><span class="chg ${pct.cls}">${pct.text}</span><span class="sess ${sessClass(sess)}">${sess}</span></div><div class="label">${src} · ${code}</div>`;
-    board.appendChild(tile);
+  const wrap=document.getElementById('boardWrap');
+  wrap.innerHTML='';
+  symbolsGrouped().forEach(group=>{
+    if(!group.items.length) return;
+    const sec=document.createElement('div');
+    sec.className='board-group';
+    sec.innerHTML=`<h3>${group.cat}</h3>`;
+    const board=document.createElement('div');
+    board.className='board';
+    group.items.forEach(s=>{
+      const tile=document.createElement('div'); tile.className='card'+(marketKind(s)==='tw'?' mkt-tw':'');
+      const src=s.coingecko?'CoinGecko':'Yahoo';
+      const code=s.coingecko||s.yahoo||'';
+      const q=quoteDetail(s.id);
+      const pct=fmtPct(q.changePercent);
+      const sess=q.session||'休市';
+      tile.innerHTML=`<div class="label">${s.label||s.id}</div><div class="price">${fmt(q.price, s.prefix||'')}</div><div class="meta"><span class="chg ${pct.cls}">${pct.text}</span><span class="sess ${sessClass(sess)}">${sess}</span></div><div class="label">${src} · ${code}</div>`;
+      board.appendChild(tile);
+    });
+    sec.appendChild(board);
+    wrap.appendChild(sec);
   });
   renderMini();
 }
 function renderTable(){
   const tb=document.getElementById('tbody'); tb.innerHTML='';
-  cfg.symbols.forEach((s,i)=>{
-    const tr=document.createElement('tr');
-    tr.onclick=()=>{selected=i; renderTable();};
-    if(i===selected) tr.style.background='rgba(10,132,255,.16)';
-    const src=s.coingecko?'CoinGecko':'Yahoo';
-    const code=s.coingecko||s.yahoo||'';
-    tr.innerHTML=`<td><span class="ord"><span class="ord-btns"><button type="button" data-move="-1" title="上移" ${i===0?'disabled':''}>▲</button><button type="button" data-move="1" title="下移" ${i===cfg.symbols.length-1?'disabled':''}>▼</button></span><span>${i+1}</span></span></td><td>${s.label||''}</td><td>${src}</td><td>${code}</td><td><button class="btn-secondary" type="button" data-test="1">驗證</button></td>`;
-    tr.querySelectorAll('[data-move]').forEach(btn=>{
-      btn.onclick=e=>{e.stopPropagation(); moveAt(i, Number(btn.dataset.move));};
+  const cats=categories();
+  fillCategorySelects();
+  reorderSymbolsByCategory();
+  let selectedId=selected>=0 && cfg.symbols[selected] ? cfg.symbols[selected].id : null;
+  if(selectedId){
+    selected=cfg.symbols.findIndex(s=>s.id===selectedId);
+  }
+  let absIndex=0;
+  symbolsGrouped().forEach(group=>{
+    if(!group.items.length) return;
+    const head=document.createElement('tr');
+    head.className='cat-head';
+    head.innerHTML=`<td colspan="6">${group.cat}（${group.items.length}）</td>`;
+    tb.appendChild(head);
+    group.items.forEach((s, localIdx)=>{
+      const i=cfg.symbols.indexOf(s);
+      const tr=document.createElement('tr');
+      tr.onclick=()=>{selected=i; renderTable();};
+      if(i===selected) tr.style.background='rgba(10,132,255,.16)';
+      const src=s.coingecko?'CoinGecko':'Yahoo';
+      const code=s.coingecko||s.yahoo||'';
+      const catOpts=cats.map(c=>`<option value="${c}" ${s.category===c?'selected':''}>${c}</option>`).join('');
+      const atTop=localIdx===0;
+      const atBottom=localIdx===group.items.length-1;
+      absIndex++;
+      tr.innerHTML=`<td><span class="ord"><span class="ord-btns"><button type="button" data-move="-1" title="上移" ${atTop?'disabled':''}>▲</button><button type="button" data-move="1" title="下移" ${atBottom?'disabled':''}>▼</button></span><span>${absIndex}</span></span></td><td>${s.label||''}</td><td><select class="cat-select" data-cat>${catOpts}</select></td><td>${src}</td><td>${code}</td><td><button class="btn-secondary" type="button" data-test="1">驗證</button></td>`;
+      tr.querySelectorAll('[data-move]').forEach(btn=>{
+        btn.onclick=e=>{e.stopPropagation(); moveWithinCategory(i, Number(btn.dataset.move));};
+      });
+      tr.querySelector('[data-cat]').onchange=e=>{
+        e.stopPropagation();
+        cfg.symbols[i].category=e.target.value;
+        selected=i;
+        renderTable();
+      };
+      tr.querySelector('[data-cat]').onclick=e=>e.stopPropagation();
+      const msgTr=document.createElement('tr');
+      msgTr.className='row-msg';
+      msgTr.innerHTML=`<td colspan="6"><div class="row-toast" data-row-toast="${i}"></div></td>`;
+      tr.querySelector('[data-test]').onclick=e=>{
+        e.stopPropagation();
+        testRow(i, msgTr);
+      };
+      tb.appendChild(tr);
+      tb.appendChild(msgTr);
     });
-    const msgTr=document.createElement('tr');
-    msgTr.className='row-msg';
-    msgTr.innerHTML=`<td colspan="5"><div class="row-toast" data-row-toast="${i}"></div></td>`;
-    tr.querySelector('[data-test]').onclick=e=>{
-      e.stopPropagation();
-      testRow(i, msgTr);
-    };
-    tb.appendChild(tr);
-    tb.appendChild(msgTr);
   });
 }
-function moveAt(i,dir){
-  const j=i+dir;
-  if(j<0||j>=cfg.symbols.length)return;
+function moveWithinCategory(i, dir){
+  const s=cfg.symbols[i];
+  if(!s) return;
+  const cat=s.category;
+  const idxs=[];
+  cfg.symbols.forEach((x,idx)=>{ if(x.category===cat) idxs.push(idx); });
+  const pos=idxs.indexOf(i);
+  const targetPos=pos+dir;
+  if(targetPos<0 || targetPos>=idxs.length) return;
+  const j=idxs[targetPos];
   const t=cfg.symbols[i]; cfg.symbols[i]=cfg.symbols[j]; cfg.symbols[j]=t;
   selected=j; renderTable();
 }
@@ -981,23 +1453,219 @@ function readNew(){
   const source=document.getElementById('newSource').value;
   let code=document.getElementById('newCode').value.trim();
   const prefix=document.getElementById('newPrefix').value;
+  const category=document.getElementById('newCategory').value || categories()[0];
   if(!label||!code) throw new Error('請填名稱與代碼');
-  const item={id:uid(), label}; if(prefix) item.prefix=prefix;
+  const item={id:uid(), label, category}; if(prefix) item.prefix=prefix;
   if(source==='coingecko') item.coingecko=code;
   else item.yahoo=normalizeYahooSymbol(code);
+  if(!item.category) item.category=inferCategory(item, categories());
   return item;
 }
 async function addSymbol(){
   try{
     const item=readNew();
     cfg.symbols.push(item);
+    reorderSymbolsByCategory();
+    selected=cfg.symbols.indexOf(item);
     renderTable();
     toast('已加入，正在儲存並更新報價…',true);
     document.getElementById('newLabel').value='';
     document.getElementById('newCode').value='';
+    document.getElementById('newPrefix').value='';
+    resetAutofillState();
     await saveConfig();
   }catch(e){toast(e.message,false);}
 }
+
+/* ===== 名稱／代碼字典與延遲自動帶入 ===== */
+const AUTOFILL_DELAY_MS=750;
+let symbolDict={tw:[], us:[], coin:[]};
+let autofill={
+  timer:null,
+  from:null,
+  filledLabel:null,
+  filledCode:null,
+  lockedLabel:false,
+  lockedCode:false
+};
+
+function resetAutofillState(){
+  clearTimeout(autofill.timer);
+  autofill.timer=null;
+  autofill.from=null;
+  autofill.filledLabel=null;
+  autofill.filledCode=null;
+  autofill.lockedLabel=false;
+  autofill.lockedCode=false;
+  const hint=document.getElementById('autofillHint');
+  if(hint){ hint.textContent='輸入名稱或代碼後稍候，會自動帶入對應欄位'; hint.classList.remove('hit'); }
+}
+
+function normKey(s){
+  return String(s||'').trim().toLowerCase().replace(/\s+/g,'');
+}
+
+function dictEntries(prefer){
+  const order=prefer==='coin'?['coin','tw','us']
+    :prefer==='us'?['us','tw','coin']
+    :prefer==='tw'?['tw','us','coin']
+    :['tw','us','coin'];
+  const out=[];
+  order.forEach(k=>{
+    (symbolDict[k]||[]).forEach(e=>out.push({...e, market:k}));
+  });
+  return out;
+}
+
+function scoreDictHit(query, entry){
+  const q=normKey(query);
+  if(!q) return 0;
+  const label=normKey(entry.label);
+  const code=normKey(entry.code);
+  const codeNoSuf=code.replace(/\.tw$|\.two$/i,'');
+  const aliases=(entry.aliases||[]).map(normKey);
+  if(q===label || q===code || q===codeNoSuf || aliases.includes(q)) return 100;
+  if(label.startsWith(q) || code.startsWith(q) || codeNoSuf.startsWith(q)) return 80;
+  if(aliases.some(a=>a.startsWith(q))) return 75;
+  if(q.length>=2 && (label.includes(q) || code.includes(q) || codeNoSuf.includes(q))) return 55;
+  if(q.length>=2 && aliases.some(a=>a.includes(q))) return 50;
+  // 台股純數字：0050 / 2330
+  if(/^\d{4,6}[a-z]?$/i.test(q) && (codeNoSuf===q || label===q)) return 95;
+  return 0;
+}
+
+function lookupSymbol(query, prefer){
+  const q=String(query||'').trim();
+  if(q.length<1) return null;
+  let best=null, bestScore=0;
+  dictEntries(prefer).forEach(e=>{
+    const sc=scoreDictHit(q, e);
+    if(sc>bestScore){ bestScore=sc; best=e; }
+  });
+  // 短字串只接受高信心；避免輸入中被頻繁誤帶
+  if(!best) return null;
+  if(q.length<=1 && bestScore<100) return null;
+  if(q.length===2 && bestScore<80) return null;
+  if(bestScore<55) return null;
+  return best;
+}
+
+function preferMarketFromForm(){
+  const src=document.getElementById('newSource')?.value;
+  const cat=document.getElementById('newCategory')?.value||'';
+  if(src==='coingecko' || /coin|crypto|幣/i.test(cat)) return 'coin';
+  if(/^us$/i.test(cat) || /美/i.test(cat)) return 'us';
+  if(/^tw$/i.test(cat) || /台/i.test(cat)) return 'tw';
+  return null;
+}
+
+function applyDictHit(hit, from){
+  if(!hit) return;
+  const labelEl=document.getElementById('newLabel');
+  const codeEl=document.getElementById('newCode');
+  const sourceEl=document.getElementById('newSource');
+  const catEl=document.getElementById('newCategory');
+  const prefixEl=document.getElementById('newPrefix');
+  const hint=document.getElementById('autofillHint');
+
+  const catMap={tw:'TW', us:'US', coin:'Coin'};
+  const wantCat=catMap[hit.market]||hit.market;
+  const cats=categories();
+  const resolvedCat=cats.includes(wantCat)?wantCat:(cats.find(c=>c.toLowerCase()===wantCat.toLowerCase())||cats[0]);
+
+  if(from==='label'){
+    // 輸入名稱 → 只自動帶入代碼（名稱保留使用者輸入，方便繼續修改）
+    if(!autofill.lockedCode){
+      codeEl.value=hit.code;
+      autofill.filledCode=hit.code;
+    }
+  }else{
+    // 輸入代碼 → 只自動帶入名稱；代碼可正規化為字典標準寫法
+    if(!autofill.lockedLabel){
+      labelEl.value=hit.label;
+      autofill.filledLabel=hit.label;
+    }
+    if(!autofill.lockedCode){
+      codeEl.value=hit.code;
+      autofill.filledCode=hit.code;
+    }
+  }
+
+  if(sourceEl) sourceEl.value=hit.market==='coin'?'coingecko':'yahoo';
+  if(catEl && resolvedCat) catEl.value=resolvedCat;
+  if(prefixEl){
+    if(hit.prefix) prefixEl.value=hit.prefix;
+    else if(hit.market==='coin' && !prefixEl.value) prefixEl.value='$';
+  }
+  if(hint){
+    hint.textContent=`已帶入：${hit.label} ↔ ${hit.code}`+(hit.aliases&&hit.aliases[0]?`（${hit.aliases[0]}）`:'');
+    hint.classList.add('hit');
+  }
+}
+
+function scheduleAutofill(from){
+  clearTimeout(autofill.timer);
+  autofill.from=from;
+  autofill.timer=setTimeout(()=>{
+    const prefer=preferMarketFromForm();
+    const q=from==='label'
+      ? document.getElementById('newLabel').value
+      : document.getElementById('newCode').value;
+    const hit=lookupSymbol(q, prefer);
+    if(hit) applyDictHit(hit, from);
+  }, AUTOFILL_DELAY_MS);
+}
+
+function bindAutofillInputs(){
+  const labelEl=document.getElementById('newLabel');
+  const codeEl=document.getElementById('newCode');
+  if(!labelEl || !codeEl || labelEl.dataset.autofillBound) return;
+  labelEl.dataset.autofillBound='1';
+  codeEl.dataset.autofillBound='1';
+
+  labelEl.addEventListener('input', ()=>{
+    if(autofill.filledLabel!=null && labelEl.value.trim()!==autofill.filledLabel){
+      autofill.lockedLabel=true;
+    }
+    // 手動改名稱時，若代碼仍是舊自動值，允許之後重新帶入
+    if(autofill.filledCode!=null && codeEl.value.trim()===autofill.filledCode){
+      autofill.lockedCode=false;
+    }
+    scheduleAutofill('label');
+  });
+  codeEl.addEventListener('input', ()=>{
+    if(autofill.filledCode!=null && codeEl.value.trim()!==autofill.filledCode){
+      autofill.lockedCode=true;
+    }
+    if(autofill.filledLabel!=null && labelEl.value.trim()===autofill.filledLabel){
+      autofill.lockedLabel=false;
+    }
+    scheduleAutofill('code');
+  });
+  // 輸入中先取消計時，停頓後再帶入
+  const bump=(from)=>()=>{
+    clearTimeout(autofill.timer);
+    scheduleAutofill(from);
+  };
+  labelEl.addEventListener('keydown', ()=>clearTimeout(autofill.timer));
+  codeEl.addEventListener('keydown', ()=>clearTimeout(autofill.timer));
+  labelEl.addEventListener('keyup', bump('label'));
+  codeEl.addEventListener('keyup', bump('code'));
+}
+
+async function loadSymbolDict(){
+  try{
+    const data=await (await fetch('/symbol-dict.json')).json();
+    symbolDict={
+      tw:Array.isArray(data.tw)?data.tw:[],
+      us:Array.isArray(data.us)?data.us:[],
+      coin:Array.isArray(data.coin)?data.coin:[]
+    };
+  }catch{
+    symbolDict={tw:[], us:[], coin:[]};
+  }
+}
+
 async function testPayload(item){const res=await fetch('/api/test',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(item)}); const data=await res.json(); if(!data.ok) throw new Error(data.error||'驗證失敗'); return data;}
 async function testNew(){try{const d=await testPayload(readNew()); testToast(`連線成功：${d.symbol} = ${d.price}`,true);}catch(e){testToast(e.message,false);}}
 function rowToast(msgTr, msg, ok){
@@ -1018,7 +1686,8 @@ async function testRow(i, msgTr){
   }
 }
 async function saveConfig(){
-  // 儲存前再正規化一次，修正舊資料缺 .TW
+  cfg=ensureCategories(cfg);
+  reorderSymbolsByCategory();
   cfg.symbols=(cfg.symbols||[]).map(s=>{
     if(s&&s.yahoo) s.yahoo=normalizeYahooSymbol(s.yahoo);
     return s;
@@ -1026,12 +1695,13 @@ async function saveConfig(){
   const res=await fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)});
   const data=await res.json(); if(!data.ok){toast(data.error||'儲存失敗',false);return;}
   toast(data.warn ? ('已儲存（報價更新有警告）') : '已儲存，報價已更新', true);
-  // 以伺服器回寫後的設定為準，並拉最新報價
   await loadConfig();
   await refreshQuotes();
 }
 async function loadConfig(){
-  cfg=await (await fetch('/api/config')).json();
+  cfg=ensureCategories(await (await fetch('/api/config')).json());
+  reorderSymbolsByCategory();
+  renderCatList();
   renderTable();
   renderMini();
 }
@@ -1044,7 +1714,10 @@ async function refreshAll(){
   try{ await fetch('/api/refresh',{method:'POST'}); }catch{}
   await refreshQuotes();
 }
+bindAutofillInputs();
+loadSymbolDict();
 refreshAll().then(()=>{
+  requestPrefs();
   if(isWidget){
     sizeFitDone=false;
     resizeForMode(true);

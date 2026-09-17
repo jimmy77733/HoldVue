@@ -10,7 +10,7 @@ New-Item -ItemType Directory -Path $staging | Out-Null
 
 $appDest = Join-Path $staging 'app'
 New-Item -ItemType Directory -Path $appDest | Out-Null
-foreach ($name in @('index.html', 'config.json')) {
+foreach ($name in @('index.html', 'config.json', 'symbol-dict.json')) {
     $src = Join-Path $root "app\$name"
     if (Test-Path $src) { Copy-Item $src (Join-Path $appDest $name) }
 }

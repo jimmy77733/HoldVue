@@ -27,6 +27,7 @@ app/webview2/
 app/*.pid
 app/refresh.flag
 app/_once.ps1
+tmp/
 
 # OS / editor
 .DS_Store

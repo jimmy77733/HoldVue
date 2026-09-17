@@ -2,13 +2,14 @@
   "columns": 2,
   "labelWidth": 7,
   "valueWidth": 9,
+  "categories": ["TW", "US", "Coin"],
   "symbols": [
-    { "id": "TWII", "label": "加權", "yahoo": "^TWII" },
-    { "id": "s2330", "label": "2330", "yahoo": "2330.TW" },
-    { "id": "s0050", "label": "0050", "yahoo": "0050.TW" },
-    { "id": "NDQ", "label": "NDQ", "yahoo": "^NDX" },
-    { "id": "SOX", "label": "SOX", "yahoo": "^SOX" },
-    { "id": "BTC", "label": "BTC", "coingecko": "bitcoin", "prefix": "$" },
-    { "id": "ETH", "label": "ETH", "coingecko": "ethereum", "prefix": "$" }
+    { "id": "TWII", "label": "加權", "yahoo": "^TWII", "category": "TW" },
+    { "id": "s2330", "label": "2330", "yahoo": "2330.TW", "category": "TW" },
+    { "id": "s0050", "label": "0050", "yahoo": "0050.TW", "category": "TW" },
+    { "id": "NDQ", "label": "NDQ", "yahoo": "^NDX", "category": "US" },
+    { "id": "SOX", "label": "SOX", "yahoo": "^SOX", "category": "US" },
+    { "id": "BTC", "label": "BTC", "coingecko": "bitcoin", "prefix": "$", "category": "Coin" },
+    { "id": "ETH", "label": "ETH", "coingecko": "ethereum", "prefix": "$", "category": "Coin" }
   ]
 }
