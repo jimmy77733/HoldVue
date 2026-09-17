@@ -316,6 +316,8 @@ namespace HoldVue
             Name = "HoldVueMain";
             StartPosition = FormStartPosition.Manual;
             FormBorderStyle = FormBorderStyle.None;
+            // 尺寸由前端 CSS 像素直接指定，關閉 WinForms 自動縮放以免高 DPI 被放大一截
+            AutoScaleMode = AutoScaleMode.None;
             // 極簡模式：不在工作列顯示，僅系統匣（Mac 版 Electron 維持 Dock 行為）
             ShowInTaskbar = false;
             TopMost = true;
@@ -556,7 +558,24 @@ namespace HoldVue
         void ApplySize(int w, int h)
         {
             WindowState = FormWindowState.Normal;
-            ClientSize = new Size(Math.Max(MinimumSize.Width, w), Math.Max(MinimumSize.Height, h));
+            int cw = Math.Max(MinimumSize.Width, w);
+            int ch = Math.Max(MinimumSize.Height, h);
+            // 一律套用（等同 Electron setContentSize），避免殘留過高客戶區
+            SuspendLayout();
+            try
+            {
+                ClientSize = new Size(cw, ch);
+                try
+                {
+                    if (_web != null && Math.Abs(_web.ZoomFactor - 1.0) > 0.01)
+                        _web.ZoomFactor = 1.0;
+                }
+                catch { }
+            }
+            finally
+            {
+                ResumeLayout(true);
+            }
             SaveBounds();
         }
 
@@ -573,9 +592,15 @@ namespace HoldVue
             }
             else
             {
+                // 記下目前客戶區，避免拿掉標題列後客戶區被撐大
+                int cw = ClientSize.Width;
+                int ch = ClientSize.Height;
                 FormBorderStyle = FormBorderStyle.None;
                 ShowInTaskbar = false;
                 ApplyClickThroughStyle();
+                // 強制維持原客戶區，之後由前端再貼齊內容
+                if (cw > 0 && ch > 0)
+                    ClientSize = new Size(cw, ch);
             }
         }
 
@@ -590,6 +615,7 @@ namespace HoldVue
                 _web.CoreWebView2.Settings.AreDefaultContextMenusEnabled = false;
                 _web.CoreWebView2.Settings.IsStatusBarEnabled = false;
                 _web.CoreWebView2.Settings.AreDevToolsEnabled = false;
+                try { _web.ZoomFactor = 1.0; } catch { }
                 _web.CoreWebView2.WebMessageReceived += OnWebMessage;
                 _web.CoreWebView2.Navigate("http://127.0.0.1:" + _port + "/?widget=1");
             }
@@ -725,7 +751,11 @@ namespace HoldVue
                 }
                 else if (cmd == "ready")
                 {
-                    // 不再強制縮回系統列尺寸，保留使用者／股票列大小
+                    // 啟動後交由前端依內容重算，避免沿用 window.json 殘留大窗
+                    BeginInvoke(new Action(() =>
+                    {
+                        try { EvalJs("sizeFitDone=false;if(typeof resizeForMode==='function')resizeForMode(true);"); } catch { }
+                    }));
                 }
             }
             catch { }
@@ -780,8 +810,9 @@ namespace HoldVue
                 if (opacityPct > 100) opacityPct = 100;
                 _opacity = opacityPct / 100.0;
                 Opacity = _opacity;
-                // 僅遷移超大儀表板舊設定；股票列（約 560 寬）要保留
-                if (w > 900 || h > 700) { w = 320; h = 82; }
+                // 尺寸交給前端依內容決定（對齊本機 Electron）；這裡只還原位置與偏好
+                w = 300;
+                h = 78;
                 w = Math.Max(MinimumSize.Width, w);
                 h = Math.Max(MinimumSize.Height, h);
                 var area = Screen.FromPoint(new Point(x, y)).WorkingArea;
@@ -790,7 +821,9 @@ namespace HoldVue
                     x = area.Left + 40;
                     y = area.Top + 40;
                 }
-                Bounds = new Rectangle(x, y, w, h);
+                // 用 Location + ClientSize，與 ApplySize／前端量測一致
+                Location = new Point(x, y);
+                ClientSize = new Size(w, h);
             }
             catch { }
         }
@@ -802,7 +835,12 @@ namespace HoldVue
                 if (WindowState != FormWindowState.Normal) return;
                 Directory.CreateDirectory(Path.GetDirectoryName(_boundsPath));
                 int opacityPct = (int)Math.Round(_opacity * 100);
-                var json = "{\"x\":" + Left + ",\"y\":" + Top + ",\"w\":" + Width + ",\"h\":" + Height + ",\"topMost\":" + (_topMost ? "true" : "false") + ",\"clickThrough\":" + (_clickThrough ? "true" : "false") + ",\"opacity\":" + opacityPct + "}";
+                // 存客戶區尺寸（對齊 JS innerWidth/Height），不要存含邊框的 Bounds
+                var json = "{\"x\":" + Left + ",\"y\":" + Top
+                    + ",\"w\":" + ClientSize.Width + ",\"h\":" + ClientSize.Height
+                    + ",\"topMost\":" + (_topMost ? "true" : "false")
+                    + ",\"clickThrough\":" + (_clickThrough ? "true" : "false")
+                    + ",\"opacity\":" + opacityPct + "}";
                 File.WriteAllText(_boundsPath, json);
             }
             catch { }

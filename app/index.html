@@ -134,6 +134,8 @@ html.lowcontrast .mini-cell .sess.h24{
 .mini[data-mode="stock"] .mini-tabs{
   width:100%;
   align-self:stretch;
+  margin-top:auto; /* 視窗偏高時 TAB 仍貼底 */
+  flex:0 0 auto;
 }
 .mini[data-mode="stock"] .mini-grid::-webkit-scrollbar{
   width:0 !important;
@@ -368,6 +370,9 @@ html:not(.widget) .resize-handle{display:none !important}
         <div class="toolbar">
           <button class="btn-danger" type="button" onclick="removeSelected()">刪除</button>
           <button class="btn-primary" type="button" onclick="saveConfig()">儲存設定</button>
+          <button class="btn-secondary" type="button" onclick="exportSymbolList()">匯出清單</button>
+          <button class="btn-secondary" type="button" onclick="document.getElementById('importFile').click()">匯入清單</button>
+          <input id="importFile" type="file" accept="application/json,.json" hidden/>
           <button class="btn-secondary" type="button" onclick="refreshAll()">重新整理</button>
           <button class="btn-secondary" type="button" onclick="exitFullMode()">返回極簡</button>
         </div>
@@ -504,6 +509,8 @@ let locked=localStorage.getItem('holdvue-lock')==='1';
 let lowContrast=localStorage.getItem('holdvue-lowcontrast')==='1';
 let clickTimes=[];
 let sizeFitDone=false;
+/** 使用者手動拉過股票視窗；僅在非 force 時保留，避免打包版殘留過大高度 */
+let stockUserSized=false;
 const TRIPLE_MS=650;
 const DEFAULT_CATEGORIES=['TW','US','Coin'];
 /** 系統／股票各自記住視窗尺寸，互不覆蓋 */
@@ -511,9 +518,13 @@ let modeSizes=(()=>{
   try{ return JSON.parse(localStorage.getItem('holdvue-mode-sizes')||'{}')||{}; }
   catch{ return {}; }
 })();
-// 清掉偏高的系統／股票尺寸，改回貼齊內容
+// 與本機 Electron 一致：啟動時清掉會造成空白的過大股票尺寸
 if(modeSizes.sys && modeSizes.sys.h>72) delete modeSizes.sys;
-if(modeSizes.stock && modeSizes.stock.h>420) delete modeSizes.stock;
+if(isWidget){
+  delete modeSizes.stock;
+  stockUserSized=false;
+}
+try{ localStorage.setItem('holdvue-mode-sizes', JSON.stringify(modeSizes)); }catch{}
 if(lowContrast) root.classList.add('lowcontrast');
 
 function currentMode(){ return locked?'sys':viewMode; }
@@ -565,6 +576,7 @@ function setStockTab(name){
   stockTab=name;
   localStorage.setItem('holdvue-stock-tab', stockTab);
   sizeFitDone=false;
+  stockUserSized=false;
   delete modeSizes.stock;
   renderMini();
   if(isWidget && !root.classList.contains('fullmode') && currentMode()==='stock'){
@@ -728,51 +740,55 @@ function measureMiniGridSize(cols, opts){
   const contentW=colW.reduce((a,b)=>a+b,0)+colGap*Math.max(0, cols-1);
   const contentH=rowH.reduce((a,b)=>a+b,0)+rowGap*Math.max(0, rowH.length-1);
   const border=3; // 1.5px * 2
-  const widthPad=tight?8:10;
-  // 高度：緊貼內容 + border；系統模式不再多加垂直餘裕
-  const heightPad=tight?0:4;
+  const widthPad=tight?8:14;
+  // 高度：緊貼內容 + border；非 tight 略留餘裕（WebView2 較易裁切）
+  const heightPad=tight?0:8;
   return {
     w:Math.max(120, Math.ceil(padX+contentW+border+widthPad)),
     h:Math.max(tight?40:52, Math.ceil(padY+contentH+border+heightPad))
   };
 }
 
-/** 縮放後若仍裁切則補寬／貼齊高度 */
+/** 縮放後若內容被裁切才補寬／補高（只放大） */
 function ensureMiniNoClip(baseW, baseH){
   const mode=currentMode();
+  const grid=document.getElementById('miniGrid');
+  const mini=document.getElementById('mini');
+  const tabs=document.getElementById('miniTabs');
   if(mode==='stock'){
-    const fit=fitStockWindowSize(document.getElementById('mini').classList.contains('cols-2'));
-    const w=Math.max(baseW, fit.w);
-    const h=fit.h; // 股票模式一律貼齊內容，避免列表與 TAB 間大片空白
-    if(Math.abs(w-baseW)>1 || Math.abs(h-baseH)>1){
+    const fit=fitStockWindowSize(mini.classList.contains('cols-2'));
+    const tabsH=tabs&&getComputedStyle(tabs).display!=='none'?Math.ceil(tabs.getBoundingClientRect().height||22):0;
+    const needH=Math.max(fit.h, Math.ceil((grid?.scrollHeight||0)+tabsH+8));
+    const needW=Math.max(fit.w, Math.ceil((grid?.scrollWidth||0)+12));
+    const w=Math.max(baseW, needW);
+    const h=Math.max(baseH, needH);
+    if(w>baseW+1 || h>baseH+1){
       post({cmd:'resize', w, h});
       persistModeSize('stock', w, h);
     }
     return;
   }
-  const cols=2;
-  const need=measureMiniGridSize(cols, {tight:true});
-  if(need.w>baseW+1 || Math.abs(need.h-baseH)>1){
-    post({cmd:'resize', w:Math.max(baseW, need.w), h:need.h});
-    persistModeSize('sys', Math.max(baseW, need.w), need.h);
+  const need=measureMiniGridSize(2, {tight:true});
+  if(need.w>baseW+1 || need.h>baseH+1){
+    post({cmd:'resize', w:Math.max(baseW, need.w), h:Math.max(baseH, need.h)});
+    persistModeSize('sys', Math.max(baseW, need.w), Math.max(baseH, need.h));
   }
 }
 
-/** 股票模式：寬高皆依目前分類內容貼齊（TAB 寬度跟隨內容寬，不回讀視窗寬） */
+/** 股票模式：與本機 Electron 相同，依格子自然高度量測（不含大窗空白） */
 function fitStockWindowSize(preferTwo){
   const mini=document.getElementById('mini');
   const n=Math.max(1, symbolsInCategory().length);
   const useTwo=preferTwo!==false && n>=2;
   mini.classList.toggle('cols-2', useTwo);
   void mini.offsetWidth;
-  const {w,h}=measureMiniGridSize(useTwo?2:1, {tight:true});
+  const {w,h}=measureMiniGridSize(useTwo?2:1, {tight:false});
   const tabs=document.getElementById('miniTabs');
   let tabsH=22;
   if(tabs && getComputedStyle(tabs).display!=='none'){
     tabsH=Math.max(22, Math.ceil(tabs.getBoundingClientRect().height||22));
   }
-  // 寬度只看標的列，避免 TAB flex 被大視窗撐開後污染量測
-  return {w:Math.max(w, 132), h:Math.min(420, Math.max(64, h+tabsH)), useTwo};
+  return {w:Math.max(w, 140), h:Math.min(420, Math.max(72, h+tabsH)), useTwo};
 }
 
 /** 系統監控：永遠貼齊內容，不受股票模式高寬影響 */
@@ -787,7 +803,7 @@ function fitSysWindowSize(){
   return {w:measured.w, h:Math.max(40, Math.min(measured.h, laid))};
 }
 
-/** 僅手動拉寬／縮小時切換單／雙欄 */
+/** 僅手動拉寬／縮小時切換單／雙欄；結束時記住使用者尺寸 */
 function syncStockColsToWidth(snap){
   if(!isWidget || root.classList.contains('fullmode')) return;
   if(currentMode()!=='stock') return;
@@ -795,20 +811,24 @@ function syncStockColsToWidth(snap){
   const n=symbolsInCategory().length;
   if(n<2){ mini.classList.remove('cols-2'); return; }
   const wasTwo=mini.classList.contains('cols-2');
-  const twoSize=(()=>{ mini.classList.add('cols-2'); void mini.offsetWidth; return measureMiniGridSize(2, {tight:true}); })();
+  const twoSize=(()=>{ mini.classList.add('cols-2'); void mini.offsetWidth; return measureMiniGridSize(2, {tight:false}); })();
   const keep=window.innerWidth>=(wasTwo?twoSize.w-8:twoSize.w);
   mini.classList.toggle('cols-2', keep);
   if(snap){
-    // 欄數變更後重新貼齊內容（含高度）
-    const fit=fitStockWindowSize(keep);
-    post({cmd:'resize', w:fit.w, h:fit.h});
-    persistModeSize('stock', fit.w, fit.h);
+    stockUserSized=true;
+    if(wasTwo && !keep){
+      const {w}=measureMiniGridSize(1, {tight:false});
+      const ww=Math.max(w, 140);
+      post({cmd:'resize', w:ww, h:window.innerHeight});
+      persistModeSize('stock', ww, window.innerHeight);
+    }else{
+      rememberCurrentWindow('stock');
+    }
   }
 }
 
 /**
- * 套用目前模式自己的視窗尺寸（與另一模式隔離）。
- * @param {boolean} force 強制依內容重新量測（寬高都貼齊）
+ * 套用目前模式視窗尺寸（對齊本機 Electron：force 時一律內容最佳化）
  */
 function resizeForMode(force){
   if(!isWidget || root.classList.contains('fullmode')) return;
@@ -821,22 +841,16 @@ function resizeForMode(force){
       const mini=document.getElementById('mini');
       mini.classList.remove('cols-2');
       void mini.offsetWidth;
-      const oneW=measureMiniGridSize(1, {tight:true}).w;
-      // 僅在非強制、且先前寬度明顯夠雙欄時維持雙欄
-      const preferTwo=!force && !!(saved && saved.w>=oneW*2-24 && symbolsInCategory().length>=2);
+      const oneW=measureMiniGridSize(1, {tight:false}).w;
+      const preferTwo=!!(saved && saved.w>=oneW*2-24 && symbolsInCategory().length>=2);
       const fit=fitStockWindowSize(preferTwo);
-      w=fit.w;
-      // force：寬高都貼齊內容；否則寬度仍貼齊，高度可保留手動放大（但不小於內容）
-      if(force){
+      if(force || !stockUserSized){
+        w=fit.w;
         h=fit.h;
-      }else if(saved && saved.h>=fit.h && saved.h<=fit.h+48){
-        // 接近內容的微調高度可保留
-        h=saved.h;
-      }else if(saved && saved.h>fit.h+48){
-        // 明顯過高的舊尺寸（例如完整介面殘留）一律收回
-        h=fit.h;
+        stockUserSized=false;
       }else{
-        h=fit.h;
+        w=Math.max(fit.w, saved&&saved.w||0);
+        h=Math.max(fit.h, saved&&saved.h||0);
       }
       persistModeSize('stock', w, h);
     }else if(!force && saved && saved.w>=120 && saved.h>=40 && saved.h<=72){
@@ -1067,6 +1081,7 @@ function bindDragRegion(el, opts){
       try{ handle.releasePointerCapture(e.pointerId); }catch{}
       post({cmd:'resizeEnd'});
       syncStockColsToWidth(true);
+      if(currentMode()==='stock') stockUserSized=true;
       rememberCurrentWindow();
     });
     handle.addEventListener('pointercancel', ()=>{
@@ -1074,6 +1089,7 @@ function bindDragRegion(el, opts){
       active=false;
       post({cmd:'resizeEnd'});
       syncStockColsToWidth(true);
+      if(currentMode()==='stock') stockUserSized=true;
       rememberCurrentWindow();
     });
   });
@@ -1083,14 +1099,14 @@ window.holdvueMenu=function(act, val){
   if(act==='toggle') toggleView();
   else if(act==='theme') setTheme(root.getAttribute('data-theme')==='dark'?'light':'dark');
   else if(act==='size-sys'){
-    sizeFitDone=false; viewMode='sys';
+    sizeFitDone=false; stockUserSized=false; viewMode='sys';
     if(!locked) localStorage.setItem('holdvue-view','sys');
     delete modeSizes.sys;
     renderMini(); resizeForMode(true);
   }
   else if(act==='size-stock'){
     if(!locked){ viewMode='stock'; localStorage.setItem('holdvue-view','stock'); }
-    sizeFitDone=false; delete modeSizes.stock;
+    sizeFitDone=false; stockUserSized=false; delete modeSizes.stock;
     renderMini(); resizeForMode(true);
   }
   else if(act==='full') enterFullMode();
@@ -1127,14 +1143,14 @@ document.getElementById('ctx').addEventListener('click', e=>{
   else if(act==='clickthrough') post({cmd:'clickthrough'});
   else if(act==='lowcontrast'){ setLowContrast(!lowContrast); flashHint(lowContrast?'低對比：開':'低對比：關'); }
   else if(act==='size-sys'){
-    sizeFitDone=false; viewMode='sys';
+    sizeFitDone=false; stockUserSized=false; viewMode='sys';
     if(!locked) localStorage.setItem('holdvue-view','sys');
     delete modeSizes.sys;
     renderMini(); resizeForMode(true);
   }
   else if(act==='size-stock'){
     viewMode='stock'; if(!locked){ localStorage.setItem('holdvue-view','stock'); }
-    sizeFitDone=false; delete modeSizes.stock;
+    sizeFitDone=false; stockUserSized=false; delete modeSizes.stock;
     renderMini(); resizeForMode(true);
   }
   else if(act==='full') enterFullMode();
@@ -1155,16 +1171,12 @@ function exitFullMode(){
   root.classList.remove('fullmode');
   post({cmd:'chrome', on:false});
   sizeFitDone=false;
-  // 清除兩種模式的過大殘留，返回後強制依內容重算寬高
+  stockUserSized=false;
   delete modeSizes.sys;
   delete modeSizes.stock;
   try{ localStorage.setItem('holdvue-mode-sizes', JSON.stringify(modeSizes)); }catch{}
   renderMini();
-  requestAnimationFrame(()=>requestAnimationFrame(()=>{
-    resizeForMode(true);
-    // 再校正一次，避免 chrome 切換當幀量測偏大
-    requestAnimationFrame(()=>resizeForMode(true));
-  }));
+  requestAnimationFrame(()=>requestAnimationFrame(()=>resizeForMode(true)));
 }
 
 /* Full dashboard */
@@ -1685,6 +1697,113 @@ async function testRow(i, msgTr){
     rowToast(msgTr, e.message, false);
   }
 }
+
+function buildExportPayload(){
+  cfg=ensureCategories(cfg);
+  reorderSymbolsByCategory();
+  return {
+    columns: cfg.columns!=null?cfg.columns:2,
+    labelWidth: cfg.labelWidth,
+    valueWidth: cfg.valueWidth,
+    categories: categories().slice(),
+    symbols: (cfg.symbols||[]).map(s=>{
+      const item={
+        id: s.id||uid(),
+        label: s.label||'',
+        category: s.category
+      };
+      if(s.prefix) item.prefix=s.prefix;
+      if(s.yahoo) item.yahoo=normalizeYahooSymbol(s.yahoo);
+      if(s.coingecko) item.coingecko=s.coingecko;
+      return item;
+    })
+  };
+}
+
+function exportSymbolList(){
+  try{
+    const payload=buildExportPayload();
+    const stamp=new Date().toISOString().slice(0,19).replace(/[:T]/g,'-');
+    const blob=new Blob([JSON.stringify(payload, null, 2)], {type:'application/json;charset=utf-8'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url;
+    a.download=`holdvue-symbols-${stamp}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    toast(`已匯出 ${payload.symbols.length} 筆標的（含分類）`, true);
+  }catch(e){
+    toast(e.message||'匯出失敗', false);
+  }
+}
+
+function parseImportPayload(raw){
+  const data=typeof raw==='string'?JSON.parse(raw):raw;
+  if(!data || typeof data!=='object') throw new Error('檔案格式不正確');
+  // 相容：純陣列 = 只有 symbols
+  let symbols=Array.isArray(data)?data:data.symbols;
+  if(!Array.isArray(symbols)) throw new Error('找不到 symbols 清單');
+  const categoriesIn=Array.isArray(data.categories)?data.categories.map(c=>String(c||'').trim()).filter(Boolean):[];
+  const next={
+    columns: data.columns!=null?data.columns:(cfg.columns||2),
+    labelWidth: data.labelWidth!=null?data.labelWidth:cfg.labelWidth,
+    valueWidth: data.valueWidth!=null?data.valueWidth:cfg.valueWidth,
+    categories: categoriesIn.length?categoriesIn:(cfg.categories||DEFAULT_CATEGORIES).slice(),
+    symbols: symbols.map(s=>{
+      if(!s || typeof s!=='object') throw new Error('標的項目格式錯誤');
+      const item={
+        id: s.id||uid(),
+        label: String(s.label||s.id||'').trim()
+      };
+      if(!item.label) throw new Error('標的缺少名稱');
+      if(s.prefix) item.prefix=String(s.prefix);
+      if(s.yahoo) item.yahoo=normalizeYahooSymbol(s.yahoo);
+      if(s.coingecko) item.coingecko=String(s.coingecko).trim();
+      if(!item.yahoo && !item.coingecko) throw new Error(`「${item.label}」缺少 yahoo 或 coingecko 代碼`);
+      if(s.category) item.category=String(s.category).trim();
+      return item;
+    })
+  };
+  return ensureCategories(next);
+}
+
+async function importSymbolListFile(file){
+  if(!file) return;
+  const text=await file.text();
+  const next=parseImportPayload(text);
+  if(!confirm(`將匯入 ${next.symbols.length} 筆標的、${next.categories.length} 個分類，並取代目前清單。確定？`)) return;
+  cfg=next;
+  selected=-1;
+  stockUserSized=false;
+  delete modeSizes.stock;
+  try{ localStorage.setItem('holdvue-mode-sizes', JSON.stringify(modeSizes)); }catch{}
+  renderCatList();
+  renderTable();
+  renderMini();
+  toast('匯入成功，正在儲存…', true);
+  await saveConfig();
+  sizeFitDone=false;
+  if(isWidget && !root.classList.contains('fullmode')) resizeForMode(true);
+}
+
+function bindImportExport(){
+  const input=document.getElementById('importFile');
+  if(!input || input.dataset.bound) return;
+  input.dataset.bound='1';
+  input.addEventListener('change', async ()=>{
+    const file=input.files&&input.files[0];
+    input.value='';
+    if(!file) return;
+    try{
+      await importSymbolListFile(file);
+    }catch(e){
+      toast(e.message||'匯入失敗', false);
+    }
+  });
+}
+
 async function saveConfig(){
   cfg=ensureCategories(cfg);
   reorderSymbolsByCategory();
@@ -1715,6 +1834,7 @@ async function refreshAll(){
   await refreshQuotes();
 }
 bindAutofillInputs();
+bindImportExport();
 loadSymbolDict();
 refreshAll().then(()=>{
   requestPrefs();
