@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Tag to release (e.g. v1.1.1). Leave empty to use the pushed tag.'
+        description: 'Tag to release (e.g. v1.1.2). Leave empty to use the pushed tag.'
         required: false
         default: ''
 
@@ -42,8 +42,13 @@ jobs:
           name: win
           path: dist/HoldVue-Windows-x64.exe
 
-  build-mac-arm64:
+  # 兩個 Mac 架構都在 macos-latest（Apple Silicon）建置，避免 macos-13 排隊卡住
+  build-mac:
     runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [arm64, x64]
     env:
       CSC_IDENTITY_AUTO_DISCOVERY: false
     steps:
@@ -52,69 +57,32 @@ jobs:
         with:
           node-version: 22
       - run: npm ci
-      - name: Build macOS arm64 zip
-        run: npm run pack:mac:arm64
+      - name: Build macOS ${{ matrix.arch }} zip
+        run: npx electron-builder --mac zip --${{ matrix.arch }} --publish never
       - name: Stage artifact
         run: |
           mkdir -p dist/mac-out
           ls -la dist
-          f=$(ls dist/*arm64*.zip dist/*mac*.zip 2>/dev/null | head -1)
+          f=$(ls dist/*${{ matrix.arch }}*.zip 2>/dev/null | head -1)
+          if [ -z "$f" ]; then f=$(ls dist/*.zip 2>/dev/null | head -1); fi
           test -n "$f"
-          cp "$f" dist/mac-out/HoldVue-macOS-arm64.zip
+          cp "$f" "dist/mac-out/HoldVue-macOS-${{ matrix.arch }}.zip"
           ls -la dist/mac-out
       - uses: actions/upload-artifact@v4
         with:
-          name: mac-arm64
-          path: dist/mac-out/HoldVue-macOS-arm64.zip
-          if-no-files-found: error
-
-  build-mac-x64:
-    runs-on: macos-13
-    env:
-      CSC_IDENTITY_AUTO_DISCOVERY: false
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - run: npm ci
-      - name: Build macOS x64 zip
-        run: npm run pack:mac:x64
-      - name: Stage artifact
-        run: |
-          mkdir -p dist/mac-out
-          ls -la dist
-          f=$(ls dist/*x64*.zip dist/*mac*.zip 2>/dev/null | head -1)
-          test -n "$f"
-          cp "$f" dist/mac-out/HoldVue-macOS-x64.zip
-          ls -la dist/mac-out
-      - uses: actions/upload-artifact@v4
-        with:
-          name: mac-x64
-          path: dist/mac-out/HoldVue-macOS-x64.zip
+          name: mac-${{ matrix.arch }}
+          path: dist/mac-out/HoldVue-macOS-${{ matrix.arch }}.zip
           if-no-files-found: error
 
   publish:
-    needs: [build-win, build-mac-arm64, build-mac-x64]
+    needs: [build-win, build-mac]
     if: always() && needs.build-win.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: win
           path: artifacts
-      - uses: actions/download-artifact@v4
-        if: needs.build-mac-arm64.result == 'success'
-        continue-on-error: true
-        with:
-          name: mac-arm64
-          path: artifacts
-      - uses: actions/download-artifact@v4
-        if: needs.build-mac-x64.result == 'success'
-        continue-on-error: true
-        with:
-          name: mac-x64
-          path: artifacts
+          merge-multiple: true
       - name: Show artifacts
         run: find artifacts -type f | sort
       - name: Create GitHub Release
